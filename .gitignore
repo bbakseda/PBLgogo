@@ -1,0 +1,24 @@
+# Python 빌드 임시 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# 환경 설정 및 보안 파일 (절대 깃허브에 올리면 안 됨)
+.env
+*.json
+
+# 가상환경 폴더
+venv/
+.venv/
+env/
+
+# 로컬 임베딩 데이터 및 벡터스토어 DB 캐시
+vector_store/
+C:/Users/Public/.elementary_assistant
+C:\Users\Public\.elementary_assistant
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db
