@@ -39,7 +39,7 @@ GCP_PROJECT_ID = get_config_val("GCP_PROJECT_ID", "")
 GOOGLE_APPLICATION_CREDENTIALS = get_config_val("GOOGLE_APPLICATION_CREDENTIALS", "")
 GEMINI_API_KEY = get_config_val("GEMINI_API_KEY", "")
 MY_LOCAL_OLLAMA_URL = get_config_val("MY_LOCAL_OLLAMA_URL", "")
-SERVER_OWNER_NAME = get_config_val("SERVER_OWNER_NAME", "박세훈 교사")
+SERVER_OWNER_NAME = get_config_val("SERVER_OWNER_NAME", "Teacher Sehun")
 
 # --- 경로 설정 변경 (한글 사용자명 회피 및 리눅스 배포 환경 분기) ---
 # Windows 환경은 영문 공용폴더를 활용하고, 리눅스(Streamlit Cloud) 환경은 프로젝트 내부 임시 경로를 이용합니다.
