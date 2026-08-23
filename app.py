@@ -316,7 +316,8 @@ with tab1:
                         st.session_state.temp_ref_docs = ref_docs
                         st.session_state.temp_sim_report = "" # 초기화
                     except Exception as e:
-                        st.error(f"계획서 생성 실패: {e}")
+                        import traceback
+                        st.error(f"계획서 생성 실패: {e}\n\n{traceback.format_exc()}")
                         
                 # 2단계: 일괄 생성 시 결과 보고서도 연속 생성
                 if generate_both_btn and st.session_state.temp_plan:
