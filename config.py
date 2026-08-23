@@ -1,4 +1,11 @@
 import os
+import sys
+
+# 🚨 리눅스/클라우드 배포 환경 한글 ASCII 인코딩 크래시 방지용 UTF-8 로케일 강제 이식
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["LANG"] = "ko_KR.UTF-8"
+os.environ["LC_ALL"] = "ko_KR.UTF-8"
+
 import streamlit as st
 from dotenv import load_dotenv
 
