@@ -22,10 +22,15 @@ try:
 except ImportError:
     is_streamlit_run = False
 
-# PyTorch 및 CUDA 확인
-import torch
-cuda_available = torch.cuda.is_available()
-gpu_name = torch.cuda.get_device_name(0) if cuda_available else "None"
+# PyTorch 및 CUDA 확인 (배포 서버의 미설치 상태 대비 안전한 예외 격리)
+cuda_available = False
+gpu_name = "None"
+try:
+    import torch
+    cuda_available = torch.cuda.is_available()
+    gpu_name = torch.cuda.get_device_name(0) if cuda_available else "None"
+except Exception:
+    pass
 
 # LangChain 관련 모듈 임포트
 from langchain_text_splitters import RecursiveCharacterTextSplitter
