@@ -22,8 +22,18 @@ from backend.gcs_manager import GCSManager
 from backend.vector_store import VectorStoreManager
 from backend.rag_chain import RAGChainManager
 from backend.pdf_generator import markdown_to_pdf_bytes
-from gpu_indexer import run_indexing, cuda_available, gpu_name
-import torch
+# GPU 가속 관련 변수 기본값 선언 (웹 배포 서버와 로컬 환경의 PyTorch 의존성 격리)
+cuda_available = False
+gpu_name = "None"
+run_indexing = None
+
+try:
+    import torch
+    cuda_available = torch.cuda.is_available()
+    gpu_name = torch.cuda.get_device_name(0) if cuda_available else "None"
+    from gpu_indexer import run_indexing
+except Exception:
+    pass
 
 st.set_page_config(
     page_title="초등 프로젝트 수업 계획 및 평가 비서",
