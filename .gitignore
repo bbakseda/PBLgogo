@@ -14,8 +14,8 @@ venv/
 .venv/
 env/
 
-# 로컬 임베딩 데이터 및 벡터스토어 DB 캐시
-vector_store/
+# 로컬 임베딩 데이터 및 벡터스토어 DB 캐시 (완제품 배포를 위해 주석 처리)
+# vector_store/
 C:/Users/Public/.elementary_assistant
 C:\Users\Public\.elementary_assistant
 
