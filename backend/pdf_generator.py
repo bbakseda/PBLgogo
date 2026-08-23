@@ -111,8 +111,9 @@ def markdown_to_pdf_bytes(md_text, title="수업계획서"):
     pdf.set_margins(15, 20, 15)
     pdf.add_page()
     
-    font_path = "C:\\Windows\\Fonts\\malgun.ttf"
-    font_bold_path = "C:\\Windows\\Fonts\\malgunbd.ttf"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    font_path = os.path.join(base_dir, "fonts", "malgun.ttf")
+    font_bold_path = os.path.join(base_dir, "fonts", "malgunbd.ttf")
     
     has_font = False
     if os.path.exists(font_path):
