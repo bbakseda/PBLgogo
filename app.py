@@ -22,6 +22,8 @@ from backend.gcs_manager import GCSManager
 from backend.vector_store import VectorStoreManager
 from backend.rag_chain import RAGChainManager
 from backend.pdf_generator import markdown_to_pdf_bytes
+from gpu_indexer import run_indexing, cuda_available, gpu_name
+import torch
 
 st.set_page_config(
     page_title="초등 프로젝트 수업 계획 및 평가 비서",
@@ -273,10 +275,11 @@ with st.sidebar:
     st.markdown(f"- **학습 완료된 교과 문서:** `{num_files}`개")
 
 # 탭 구성
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📅 상세 수업 계획 및 지도안 설계", 
     "📊 수업 결과 보고 및 평가서 작성", 
-    "💬 초등 교육과정 Q&A AI 비서"
+    "💬 초등 교육과정 Q&A AI 비서",
+    "⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서"
 ])
 
 # 탭 1: 상세 수업 계획 설계
@@ -313,8 +316,6 @@ with tab1:
         if generate_plan_btn or generate_both_btn:
             if not proj_title or not learning_goals:
                 st.error("수업 주제와 핵심 학습 목표를 반드시 입력해 주세요.")
-            elif not ai_service_available:
-                st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
             else:
                 # 1단계: 계획서 생성
                 with st.spinner("AI 엔진이 상세 수업계획서를 집필 중입니다..."):
@@ -467,8 +468,6 @@ with tab2:
         if generate_report_btn:
             if not rep_title or not implementations:
                 st.error("수업 주제와 활동 내용을 기입해 주세요.")
-            elif not ai_service_available:
-                st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
             else:
                 with st.spinner("AI 장학 비서가 수업 평가 보고서를 작성하고 있습니다..."):
                     try:
@@ -538,25 +537,132 @@ with tab3:
             st.markdown(prompt)
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
-        if not ai_service_available:
-            st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
+        with st.chat_message("assistant"):
+            with st.spinner("답변을 마련하는 중..."):
+                try:
+                    ans, ref_docs = st.session_state.rag_manager.answer_question(prompt)
+                    st.markdown(ans)
+                    
+                    if ref_docs:
+                        with st.expander("🔍 클라우드 인용 출처"):
+                            for idx, doc in enumerate(ref_docs):
+                                st.markdown(f"**[{idx+1}] {os.path.basename(doc.metadata.get('source', '알수없음'))} (Page {doc.metadata.get('page', 0)+1})**")
+                                st.caption(doc.page_content[:200] + "...")
+                                
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": ans,
+                        "ref_docs": ref_docs
+                    })
+                except Exception as e:
+                    st.error(f"질의응답 오류: {e}")
+
+# 탭 4: GPU 가속 인덱서
+with tab4:
+    st.subheader("⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서")
+    st.markdown("외솔.한국 RAG 홈페이지 백엔드 탑재 및 대량의 교육과정 참고 문서를 고속 임베딩하기 위한 가속 모듈입니다.")
+    
+    col_system, col_settings = st.columns([1, 1.2])
+    
+    with col_system:
+        st.markdown("### 🖥️ 시스템 인프라 현황")
+        if cuda_available:
+            st.success(f"🟢 **GPU 가속(CUDA) 활성화됨**\n- 디바이스명: `{gpu_name}`")
+            try:
+                allocated_mem = torch.cuda.memory_allocated(0) / (1024 ** 2)
+                cached_mem = torch.cuda.memory_reserved(0) / (1024 ** 2)
+                st.info(f"💾 **GPU 메모리 상태**\n- 할당된 메모리: `{allocated_mem:.1f} MB`\n- 캐시된 메모리: `{cached_mem:.1f} MB`")
+            except Exception:
+                pass
         else:
-            with st.chat_message("assistant"):
-                with st.spinner("답변을 마련하는 중..."):
+            st.warning("🟡 **CPU 연산 모드 (GPU 사용 불가)**\n- GPU 가속이 비활성화 상태입니다. 대용량 문서 인덱싱 속도가 다소 느려질 수 있습니다.")
+            st.info("""
+            💡 **GPU 가속(CUDA)을 활성화하려면:**
+            1. NVIDIA 그래픽 드라이버 설치
+            2. 로컬 가상 환경에 CUDA 버전의 PyTorch 재설치:
+            ```bash
+            pip uninstall torch torchvision -y
+            pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+            ```
+            """)
+            
+        st.markdown("---")
+        st.markdown("### ☁️ 클라우드 연동 상태 (GCS)")
+        has_gcs = bool(GCS_BUCKET_NAME)
+        if has_gcs:
+            st.success(f"✅ **GCS 버킷 설정됨**: `{GCS_BUCKET_NAME}`")
+            if GOOGLE_APPLICATION_CREDENTIALS:
+                st.caption(f"자격증명 경로: `{os.path.basename(GOOGLE_APPLICATION_CREDENTIALS)}`")
+        else:
+            st.warning("⚠️ **GCS 버킷 설정 없음**: 빌드 후 로컬 파일 저장만 수행 가능합니다.")
+            
+    with col_settings:
+        st.markdown("### ⚙️ 인덱싱 구성 설정")
+        
+        idx_input_path = st.text_input("📁 PDF 입력 디렉토리 경로 (학습 데이터 폴더)", value=DATA_DIR, key="idx_input_path")
+        idx_output_path = st.text_input("📁 FAISS 출력 디렉토리 경로 (벡터스토어 저장소)", value=VECTOR_DB_DIR, key="idx_output_path")
+        
+        idx_model_name = st.text_input("🏷️ 임베딩 모델 (HuggingFace)", value="jhgan/ko-sroberta-multitask", key="idx_model_name")
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            idx_chunk_size = st.number_input("청크 크기 (글자 수)", min_value=100, max_value=2000, value=600, step=50, key="idx_chunk_size")
+            idx_overlap = st.number_input("청크 오버랩 (글자 수)", min_value=0, max_value=1000, value=100, step=10, key="idx_overlap")
+        with col_c2:
+            idx_batch_size = st.number_input("배치 처리 파일 수 (OOM 방지)", min_value=1, max_value=200, value=20, step=5, key="idx_batch_size")
+            idx_upload_gcs = st.checkbox("인덱싱 완료 후 구글 클라우드에 자동 업로드", value=has_gcs, disabled=not has_gcs, key="idx_upload_gcs")
+            
+        run_idx_btn = st.button("🚀 GPU 가속 인덱싱 시작", type="primary", use_container_width=True, key="run_idx_btn")
+
+    st.markdown("---")
+    st.markdown("### 📊 인덱싱 진행 과정 및 로깅")
+    
+    idx_log_area = st.empty()
+    idx_progress_bar = st.progress(0.0)
+    idx_status_text = st.empty()
+    
+    if run_idx_btn:
+        idx_logs = []
+        idx_log_placeholder = st.empty()
+        
+        def app_gui_callback(msg_type, data):
+            if msg_type == "log":
+                idx_logs.append(data)
+                idx_log_placeholder.code("\n".join(idx_logs[-15:]))
+            elif msg_type == "progress":
+                idx_progress_bar.progress(data["percent"])
+                idx_status_text.write(data["text"])
+                
+        try:
+            idx_status_text.write("⏳ 인덱싱 초기화 진행 중...")
+            success, files, chunks = run_indexing(
+                input_dir=idx_input_path,
+                output_dir=idx_output_path,
+                model_name=idx_model_name,
+                file_batch_size=idx_batch_size,
+                text_chunk_size=idx_chunk_size,
+                text_chunk_overlap=idx_overlap,
+                upload_gcs=idx_upload_gcs,
+                progress_callback=app_gui_callback
+            )
+            
+            if success:
+                st.success(f"🎉 **인덱싱 완료!** 총 {files}개 파일에서 {chunks}개의 벡터 청크를 성공적으로 가속 처리하여 저장 완료했습니다.")
+                if idx_upload_gcs:
+                    st.info("☁️ 빌드된 FAISS 데이터베이스가 외솔.한국 RAG 홈페이지가 호스팅되는 구글 클라우드에 성공적으로 반영되었습니다.")
+                
+                # 인덱서가 완료되면 현재 앱의 RAG 엔진에 사용 중인 벡터 스토어도 새로 고침
+                if "vector_manager" in st.session_state and "rag_manager" in st.session_state:
                     try:
-                        ans, ref_docs = st.session_state.rag_manager.answer_question(prompt)
-                        st.markdown(ans)
-                        
-                        if ref_docs:
-                            with st.expander("🔍 클라우드 인용 출처"):
-                                for idx, doc in enumerate(ref_docs):
-                                    st.markdown(f"**[{idx+1}] {os.path.basename(doc.metadata.get('source', '알수없음'))} (Page {doc.metadata.get('page', 0)+1})**")
-                                    st.caption(doc.page_content[:200] + "...")
-                                    
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": ans,
-                            "ref_docs": ref_docs
-                        })
-                    except Exception as e:
-                        st.error(f"질의응답 오류: {e}")
+                        vs = st.session_state.vector_manager.load_vector_store()
+                        if vs:
+                            st.session_state.rag_manager.set_vector_store(vs)
+                            st.info("🔄 **현재 앱 세션의 AI 엔진 참조 데이터베이스 동기화 완료!**")
+                    except Exception as reload_err:
+                        st.warning(f"참조 DB 자동 동기화 중 경고: {reload_err}")
+            else:
+                st.error("❌ 인덱싱 작업 중 문제 또는 데이터 없음으로 인해 중단되었습니다. 로그를 확인하십시오.")
+        except Exception as e:
+            st.error(f"💥 인덱싱 중 런타임 예외가 발생했습니다: {e}")
+            import traceback
+            st.code(traceback.format_exc())
