@@ -33,10 +33,12 @@ GEMINI_API_KEY = get_config_val("GEMINI_API_KEY", "")
 MY_LOCAL_OLLAMA_URL = get_config_val("MY_LOCAL_OLLAMA_URL", "")
 SERVER_OWNER_NAME = get_config_val("SERVER_OWNER_NAME", "박세훈 교사")
 
-# --- 경로 설정 변경 (한글 사용자명으로 인한 FAISS Illegal byte sequence 완벽 회피) ---
-# Windows 사용자 이름에 한글(예: 박세훈)이 포함된 경우, 홈 디렉토리 경로에도 한글이 들어가 에러가 납니다.
-# 따라서 100% 영문으로만 이루어지고 쓰기 권한이 자유로운 공용 폴더(C:/Users/Public)를 임시/영구 데이터 저장소로 사용합니다.
-BASE_DATA_DIR = "C:/Users/Public/.elementary_assistant"
+# --- 경로 설정 변경 (한글 사용자명 회피 및 리눅스 배포 환경 분기) ---
+# Windows 환경은 영문 공용폴더를 활용하고, 리눅스(Streamlit Cloud) 환경은 프로젝트 내부 임시 경로를 이용합니다.
+if os.name == 'nt':
+    BASE_DATA_DIR = "C:/Users/Public/.elementary_assistant"
+else:
+    BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gcs_temp_data")
 
 DATA_DIR = os.path.join(BASE_DATA_DIR, "data")
 VECTOR_DB_DIR = os.path.join(BASE_DATA_DIR, "vector_store")
