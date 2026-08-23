@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import json
 import requests
-from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS
+from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL
 from backend.gcs_manager import GCSManager
 from backend.vector_store import VectorStoreManager
 from backend.rag_chain import RAGChainManager
@@ -151,11 +151,24 @@ st.markdown("<div class='subtitle'>구글 클라우드 RAG 연동 및 Gemma-4 �
 # 시스템 상태 체크
 ollama_connected = False
 try:
-    res = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=3)
+    # 1. 로컬 기본 Ollama 핑
+    res = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
     if res.status_code == 200:
         ollama_connected = True
 except:
     pass
+
+# 2. 로컬은 연결 불가하지만 원격 노출 ngrok 터널링 주소가 있으면 추가 핑
+if not ollama_connected and MY_LOCAL_OLLAMA_URL:
+    try:
+        res = requests.get(f"{MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags", timeout=2)
+        if res.status_code == 200:
+            ollama_connected = True
+    except:
+        pass
+
+# 3. AI 구동 가능 여부 (Ollama 연결 또는 Gemini API 중 최소 하나만 구동되면 성공)
+ai_service_available = ollama_connected or bool(GEMINI_API_KEY)
 
 # 사이드바
 with st.sidebar:
@@ -272,8 +285,8 @@ with tab1:
         if generate_plan_btn or generate_both_btn:
             if not proj_title or not learning_goals:
                 st.error("수업 주제와 핵심 학습 목표를 반드시 입력해 주세요.")
-            elif not ollama_connected:
-                st.error("Ollama(gemma4) 서비스가 작동 중인지 확인해 주세요.")
+            elif not ai_service_available:
+                st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
             else:
                 # 1단계: 계획서 생성
                 with st.spinner("AI 엔진이 상세 수업계획서를 집필 중입니다..."):
@@ -425,8 +438,8 @@ with tab2:
         if generate_report_btn:
             if not rep_title or not implementations:
                 st.error("수업 주제와 활동 내용을 기입해 주세요.")
-            elif not ollama_connected:
-                st.error("Ollama(gemma4) 서비스 연동을 확인해 주세요.")
+            elif not ai_service_available:
+                st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
             else:
                 with st.spinner("AI 장학 비서가 수업 평가 보고서를 작성하고 있습니다..."):
                     try:
@@ -496,8 +509,8 @@ with tab3:
             st.markdown(prompt)
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
-        if not ollama_connected:
-            st.error("Ollama 서비스 미구동 상태입니다.")
+        if not ai_service_available:
+            st.error("AI 서비스 미구동 상태입니다. (로컬 Ollama를 켜거나 구글 Gemini API Key를 설정해 주세요.)")
         else:
             with st.chat_message("assistant"):
                 with st.spinner("답변을 마련하는 중..."):
