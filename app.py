@@ -1,5 +1,20 @@
-import streamlit as st
 import os
+import sys
+import locale
+
+# 🚨 C-Extension 및 Google SDK 인코딩 오류 원천 차단 (런타임 로케일 선점)
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["LANG"] = "en_US.UTF-8"
+os.environ["LC_ALL"] = "en_US.UTF-8"
+try:
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except:
+        pass
+
+import streamlit as st
 import json
 import requests
 from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL

@@ -1,10 +1,18 @@
 import os
 import sys
+import locale
 
-# 🚨 리눅스/클라우드 배포 환경 한글 ASCII 인코딩 크래시 방지용 UTF-8 로케일 강제 이식
+# 🚨 리눅스 배포 환경의 C-Extension 및 Google SDK 인코딩 오류 원천 차단 (런타임 로케일 선점)
 os.environ["PYTHONIOENCODING"] = "utf-8"
-os.environ["LANG"] = "ko_KR.UTF-8"
-os.environ["LC_ALL"] = "ko_KR.UTF-8"
+os.environ["LANG"] = "en_US.UTF-8"
+os.environ["LC_ALL"] = "en_US.UTF-8"
+try:
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except:
+        pass
 
 import streamlit as st
 from dotenv import load_dotenv
