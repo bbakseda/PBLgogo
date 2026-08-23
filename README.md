@@ -68,21 +68,48 @@ streamlit run app.py
 ```
 실행이 완료되면 브라우저에서 **`http://localhost:8501`**로 자동 연결됩니다.
 
+### 4. ⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서 실행
+외솔.한국 RAG 홈페이지의 백엔드 성능을 강화하고 대량의 참고 문서를 실시간 고속 벡터화하기 위해, CPU 병렬 파싱 및 GPU 배치 임베딩 최적화 기법을 적용한 인덱서를 제공합니다.
+
+- **GUI 웹 대시보드로 제어 및 모니터링**:
+  ```bash
+  streamlit run gpu_indexer.py
+  ```
+- **CLI 백그라운드 자동화 스크립트로 동작**:
+  ```bash
+  # 기본 폴더 대상 로컬 인덱싱
+  python gpu_indexer.py
+  
+  # 특정 폴더 대상 인덱싱 및 완성본 구글 클라우드 자동 업로드(동기화)
+  python gpu_indexer.py --input-dir "C:/my_pdfs" --upload-gcs
+  ```
+
+> [!TIP]
+> **GPU 가속(CUDA) 활성화 안내**:
+> GPU(NVIDIA RTX 등) 연산 가속을 사용하려면 아래와 같이 CUDA 호환 PyTorch 버전을 설치해 주세요:
+> ```bash
+> pip uninstall torch torchvision -y
+> pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+> ```
+
 ---
 
 ## 📂 프로젝트 폴더 구조
 
 ```text
 ├── backend/
-│   ├── gcs_sync.py        # Google Cloud Storage 파일 동기화 모듈
+│   ├── gcs_manager.py     # Google Cloud Storage 파일 동기화 모듈 (GCSManager)
+│   ├── pdf_extractor.py   # [NEW] 멀티프로세싱 최적화 PDF 텍스트 파서
 │   ├── vector_store.py    # FAISS 벡터스토어 인덱스 빌드 및 관리
 │   ├── rag_chain.py       # 주차 계획서/시뮬레이션 보고서 프롬프트 및 RAG 체인 설계
 │   └── pdf_generator.py   # 수동 Y축 6.2mm 이동 절대 좌표 한글 PDF 생성 모듈
 ├── data/
+│   ├── 2022_curriculum_standards.pdf  # 테스트용 대용량 교육과정 PDF 가이드
 │   └── 초등_교육과정_가이드.txt  # 기본 내장 로컬 RAG용 학습 가이드
 ├── .env                   # 환경설정 파일 (Ollama 주소 및 GCS 연동 정보)
 ├── config.py              # Windows 한글 경로 에러 우회용 영문 공용 디렉토리 지정
 ├── app.py                 # Streamlit 통합 다크 블루 테마 대시보드 메인
+├── gpu_indexer.py         # [NEW] CLI 및 Streamlit GUI 통합 GPU 가속 대용량 인덱서
 └── README.md              # 프로젝트 매뉴얼 (본 문서)
 ```
 
