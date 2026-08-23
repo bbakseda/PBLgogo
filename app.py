@@ -40,18 +40,31 @@ if "gcs_manager" not in st.session_state:
 
 if "vector_manager" not in st.session_state:
     with st.spinner("교사용 AI 엔진 초기화 중... (최초 실행 시 다소 시간이 소요됩니다)"):
-        # Windows 한글 경로 우회를 위한 로컬 기본 가이드 문서 자동 복사
+        # GCS 동기화 외에 깃허브로 업로드되어 갱신된 data/ 내의 모든 교과/성취기준 파일들을 DATA_DIR로 자동 복사
         import shutil
-        src_guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "초등_교육과정_가이드.txt")
-        dst_guide = os.path.join(DATA_DIR, "초등_교육과정_가이드.txt")
-        if os.path.exists(src_guide) and not os.path.exists(dst_guide):
-            shutil.copy(src_guide, dst_guide)
+        src_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        if os.path.exists(src_data_dir):
+            for file_name in os.listdir(src_data_dir):
+                src_file = os.path.join(src_data_dir, file_name)
+                dst_file = os.path.join(DATA_DIR, file_name)
+                if os.path.isfile(src_file):
+                    # 파일이 없거나 최신 파일인 경우 자동 복사
+                    if not os.path.exists(dst_file) or os.path.getmtime(src_file) > os.path.getmtime(dst_file):
+                        shutil.copy(src_file, dst_file)
             
         embeddings = load_embeddings()
         st.session_state.vector_manager = VectorStoreManager(DATA_DIR, VECTOR_DB_DIR, embeddings=embeddings)
+        
+        # 1. 저장된 벡터 스토어 로드
         vs = st.session_state.vector_manager.load_vector_store()
-        if not vs and os.path.exists(DATA_DIR) and len(os.listdir(DATA_DIR)) > 0:
+        
+        # 2. 로컬 data/ 내의 파일 개수 파악
+        num_local_files = len([f for f in os.listdir(DATA_DIR) if os.path.isfile(os.path.join(DATA_DIR, f))]) if os.path.exists(DATA_DIR) else 0
+        
+        # 3. 로드에 실패했거나, 혹은 새로운 교육 문서 파일이 추가된 경우 (1개 초과) 강제 갱신 빌드
+        if not vs or num_local_files > 1:
             vs = st.session_state.vector_manager.build_vector_store()
+            
         st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
 
 if "chat_history" not in st.session_state:
