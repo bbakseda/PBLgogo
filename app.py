@@ -1,3 +1,13 @@
+import streamlit as st
+
+# 🚨 st.set_page_config는 반드시 그 어떤 Streamlit 명령보다 가장 먼저 실행되어야 합니다! (크래시 방어)
+st.set_page_config(
+    page_title="초등 프로젝트 수업 계획 및 평가 비서",
+    page_icon="🏫",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import os
 import sys
 import locale
@@ -14,7 +24,6 @@ except:
     except:
         pass
 
-import streamlit as st
 import json
 import requests
 from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL
@@ -22,6 +31,7 @@ from backend.gcs_manager import GCSManager
 from backend.vector_store import VectorStoreManager
 from backend.rag_chain import RAGChainManager
 from backend.pdf_generator import markdown_to_pdf_bytes
+
 # GPU 가속 관련 변수 기본값 선언 (웹 배포 서버와 로컬 환경의 PyTorch 의존성 격리)
 cuda_available = False
 gpu_name = "None"
@@ -34,13 +44,6 @@ try:
     from gpu_indexer import run_indexing
 except Exception:
     pass
-
-st.set_page_config(
-    page_title="초등 프로젝트 수업 계획 및 평가 비서",
-    page_icon="🏫",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # 임베딩 모델 캐싱
 @st.cache_resource
