@@ -40,21 +40,24 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # 프로젝트 설정 및 모듈 임포트 시도
 try:
-    from config import DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS
+    from config import DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GD_FOLDER_ID, GOOGLE_APPLICATION_CREDENTIALS
     from backend.gcs_manager import GCSManager
+    from backend.gdrive_manager import GDriveManager
 except ImportError:
     # 폴더 외부에서 단독 실행 시 기본 경로 설정
     DATA_DIR = "./data"
     VECTOR_DB_DIR = "./vector_store"
     GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
+    GD_FOLDER_ID = os.getenv("GD_FOLDER_ID", "")
     GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
     GCSManager = None
+    GDriveManager = None
 
 # 병렬 PDF 텍스트 추출 헬퍼 함수 가져오기
 from backend.pdf_extractor import extract_pdf_pages
 
 
-def run_indexing(input_dir, output_dir, model_name, file_batch_size, text_chunk_size, text_chunk_overlap, upload_gcs=False, progress_callback=None):
+def run_indexing(input_dir, output_dir, model_name, file_batch_size, text_chunk_size, text_chunk_overlap, upload_gcs=False, upload_gdrive=False, progress_callback=None):
     """
     대용량 PDF 문서를 GPU 가속을 활용하여 인덱싱하는 코어 함수입니다.
     """
@@ -220,6 +223,41 @@ def run_indexing(input_dir, output_dir, model_name, file_batch_size, text_chunk_
             if progress_callback:
                 progress_callback("log", "⚠️ GCP 설정이 유효하지 않아 클라우드 업로드를 건너뜁니다. (config.py 또는 .env 확인)")
                 
+    # 9-2. 구글 드라이브(Google Drive) 연동 및 업로드
+    if upload_gdrive:
+        if GDriveManager and GD_FOLDER_ID:
+            creds_path = GOOGLE_APPLICATION_CREDENTIALS
+            if creds_path and not os.path.isabs(creds_path):
+                creds_path = os.path.abspath(os.path.join(os.path.dirname(__file__), creds_path))
+                
+            try:
+                if progress_callback:
+                    progress_callback("log", f"구글 드라이브 업로드 시작... (폴더 ID: {GD_FOLDER_ID[:8]}...)")
+                    
+                gdrive = GDriveManager(
+                    folder_id=GD_FOLDER_ID,
+                    credentials_path=creds_path if os.path.exists(creds_path) else None
+                )
+                
+                if gdrive.is_connected():
+                    faiss_file = os.path.join(output_dir, "index.faiss")
+                    pkl_file = os.path.join(output_dir, "index.pkl")
+                    
+                    gdrive.upload_file(faiss_file, "index.faiss")
+                    gdrive.upload_file(pkl_file, "index.pkl")
+                    
+                    if progress_callback:
+                        progress_callback("log", "✅ 구글 드라이브로 FAISS 인덱스 동기화(업로드) 완료!")
+                else:
+                    if progress_callback:
+                        progress_callback("log", "❌ 구글 드라이브 연결에 실패했습니다. 공유 폴더 ID 및 자격 증명을 확인해 주세요.")
+            except Exception as gd_err:
+                if progress_callback:
+                    progress_callback("log", f"❌ 구글 드라이브 업로드 중 에러 발생: {gd_err}")
+        else:
+            if progress_callback:
+                progress_callback("log", "⚠️ 구글 드라이브 설정이 유효하지 않아 업로드를 건너뜁니다. (config.py 또는 .env 확인)")
+                
     return True, total_files, total_chunks
 
 
@@ -233,6 +271,7 @@ def run_cli():
     parser.add_argument("--chunk-size", type=int, default=600, help="텍스트 청크 크기 (글자 수)")
     parser.add_argument("--overlap", type=int, default=100, help="텍스트 청크 오버랩 크기 (글자 수)")
     parser.add_argument("--upload-gcs", action="store_true", help="GCS 버킷에 빌드된 벡터스토어 업로드 여부")
+    parser.add_argument("--upload-gdrive", action="store_true", help="구글 드라이브 공유 폴더에 빌드된 벡터스토어 업로드 여부")
     
     args = parser.parse_args()
     
@@ -249,6 +288,7 @@ def run_cli():
         print("  💡 GPU 가속을 사용하려면 CUDA와 호환되는 PyTorch 설치가 필요합니다.")
         print("     설치 예시: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
     print(f"- GCS 자동 동기화 여부: {args.upload_gcs}")
+    print(f"- 구글 드라이브 자동 동기화 여부: {args.upload_gdrive}")
     print("-" * 60)
     
     def cli_callback(msg_type, data):
@@ -267,6 +307,7 @@ def run_cli():
         text_chunk_size=args.chunk_size,
         text_chunk_overlap=args.overlap,
         upload_gcs=args.upload_gcs,
+        upload_gdrive=args.upload_gdrive,
         progress_callback=cli_callback
     )
     
@@ -343,14 +384,20 @@ def run_gui():
                 
         # 환경변수 요약
         st.markdown("---")
-        st.markdown("### ☁️ 클라우드 연동 상태 (GCS)")
+        st.markdown("### ☁️ 클라우드 연동 상태 (GCS / GDrive)")
         has_gcs = bool(GCS_BUCKET_NAME)
+        has_gdrive = bool(GD_FOLDER_ID)
+        
         if has_gcs:
             st.success(f"✅ **GCS 버킷 설정됨**: `{GCS_BUCKET_NAME}`")
-            if GOOGLE_APPLICATION_CREDENTIALS:
-                st.caption(f"자격증명 경로: `{os.path.basename(GOOGLE_APPLICATION_CREDENTIALS)}`")
-        else:
-            st.warning("⚠️ **GCS 버킷 설정 없음**: 빌드 후 로컬 파일 저장만 수행 가능합니다.")
+        if has_gdrive:
+            st.success(f"✅ **구글 드라이브 공유 폴더 설정됨**: `{GD_FOLDER_ID[:12]}...`")
+            
+        if GOOGLE_APPLICATION_CREDENTIALS:
+            st.caption(f"인증키 파일: `{os.path.basename(GOOGLE_APPLICATION_CREDENTIALS)}`")
+            
+        if not has_gcs and not has_gdrive:
+            st.warning("⚠️ **연동된 원격 저장소 없음**: 빌드 후 로컬 파일 저장만 수행 가능합니다.")
             
     with col_settings:
         st.subheader("⚙️ 인덱싱 구성 설정")
@@ -366,7 +413,8 @@ def run_gui():
             overlap = st.number_input("청크 오버랩 (글자 수)", min_value=0, max_value=1000, value=100, step=10)
         with col_c2:
             batch_size = st.number_input("배치 처리 파일 수 (OOM 방지)", min_value=1, max_value=200, value=20, step=5)
-            upload_gcs = st.checkbox("인덱싱 완료 후 구글 클라우드에 자동 업로드", value=has_gcs, disabled=not has_gcs)
+            upload_gcs = st.checkbox("GCS 버킷에 자동 업로드", value=has_gcs, disabled=not has_gcs)
+            upload_gdrive = st.checkbox("구글 드라이브 공유 폴더에 자동 업로드", value=has_gdrive, disabled=not has_gdrive)
             
         run_btn = st.button("🚀 GPU 가속 인덱싱 시작", type="primary", use_container_width=True)
 
@@ -400,13 +448,16 @@ def run_gui():
                 text_chunk_size=chunk_size,
                 text_chunk_overlap=overlap,
                 upload_gcs=upload_gcs,
+                upload_gdrive=upload_gdrive,
                 progress_callback=gui_callback
             )
             
             if success:
                 st.success(f"🎉 **인덱싱 완료!** 총 {files}개 파일에서 {chunks}개의 벡터 청크를 성공적으로 가속 처리하여 저장 완료했습니다.")
                 if upload_gcs:
-                    st.info("☁️ 빌드된 FAISS 데이터베이스가 외솔.한국 RAG 홈페이지가 호스팅되는 구글 클라우드에 성공적으로 반영되었습니다.")
+                    st.info("☁️ 빌드된 FAISS 데이터베이스가 구글 클라우드 스토리지(GCS)에 성공적으로 반영되었습니다.")
+                if upload_gdrive:
+                    st.info("☁️ 빌드된 FAISS 데이터베이스가 구글 드라이브(Google Drive) 공유 폴더에 성공적으로 반영되었습니다.")
             else:
                 st.error("❌ 인덱싱 작업 중 문제 또는 데이터 없음으로 인해 중단되었습니다. 로그를 확인하십시오.")
         except Exception as e:
