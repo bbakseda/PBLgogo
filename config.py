@@ -35,11 +35,14 @@ OLLAMA_MODEL = get_config_val("OLLAMA_MODEL", "gemma4:e4b")
 
 # Google Cloud Storage 설정
 GCS_BUCKET_NAME = get_config_val("GCS_BUCKET_NAME", "")
+GD_FOLDER_ID = get_config_val("GD_FOLDER_ID", "")  # 구글 드라이브 공유 폴더 ID
 GCP_PROJECT_ID = get_config_val("GCP_PROJECT_ID", "")
 GOOGLE_APPLICATION_CREDENTIALS = get_config_val("GOOGLE_APPLICATION_CREDENTIALS", "")
 GEMINI_API_KEY = get_config_val("GEMINI_API_KEY", "")
 MY_LOCAL_OLLAMA_URL = get_config_val("MY_LOCAL_OLLAMA_URL", "")
 SERVER_OWNER_NAME = get_config_val("SERVER_OWNER_NAME", "Teacher Sehun")
+ADMIN_PASSWORD = get_config_val("ADMIN_PASSWORD", "admin1234")  # 관리자 로그인 비밀번호
+
 
 # --- 경로 설정 변경 (한글 사용자명 회피 및 리눅스 배포 환경 분기) ---
 # Windows 환경은 영문 공용폴더를 활용하고, 리눅스(Streamlit Cloud) 환경은 프로젝트 내부 임시 경로를 이용합니다.
