@@ -123,9 +123,10 @@ if "vector_manager" not in st.session_state:
     
     # 3. 로드에 실패했거나, 혹은 새로운 교육 문서 파일이 추가된 경우 (1개 초과) 강제 갱신 빌드
     if not vs or num_local_files > 1:
-        init_status.info("⏳ [3.5/4] 신규 교육 자료 감지: 지식 데이터베이스(FAISS Index)를 재생성하는 중... (85%)")
-        init_progress.progress(0.85)
-        vs = st.session_state.vector_manager.build_vector_store()
+        def build_progress_callback(percent, status_text):
+            init_status.info(status_text)
+            init_progress.progress(percent)
+        vs = st.session_state.vector_manager.build_vector_store(progress_callback=build_progress_callback)
         
     # 4단계: 하이브리드 RAG 체인 오케스트레이션 (95%)
     init_status.info("⏳ [4/4] 로컬/클라우드 하이브리드 RAG 교수 설계 체인을 활성화하는 중... (95%)")

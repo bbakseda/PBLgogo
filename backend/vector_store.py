@@ -33,18 +33,29 @@ class VectorStoreManager:
                 print(f"Error loading vector store: {e}")
         return None
 
-    def build_vector_store(self):
-        """data_dir에 있는 모든 문서(pdf, txt 등)를 읽어서 벡터 인덱스를 생성합니다."""
-        documents = []
-        
+    def build_vector_store(self, progress_callback=None):
+        """data_dir에 있는 모든 문서(pdf, txt 등)를 순회하며 점진적으로 빌드하여 진행률을 모니터링합니다."""
         if not os.path.exists(self.data_dir):
             return None
             
-        for file in os.listdir(self.data_dir):
+        pdf_files = [f for f in os.listdir(self.data_dir) if f.lower().endswith(('.pdf', '.txt'))]
+        total_files = len(pdf_files)
+        
+        if total_files == 0:
+            return None
+            
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
+        self.vector_store = None
+        
+        for idx, file in enumerate(pdf_files):
             file_path = os.path.join(self.data_dir, file)
-            if os.path.isdir(file_path):
-                continue
+            
+            # 콜백을 통해 실시간 진행률 텍스트 전송
+            if progress_callback:
+                percent = 0.75 + (0.15 * (idx / total_files))  # 75% ~ 90% 사이를 분할
+                progress_callback(percent, f"⏳ [3.2/4] 교과 문서 학습 중: {file} 분석 중... ({idx+1}/{total_files})")
                 
+            documents = []
             try:
                 if file.endswith('.pdf'):
                     loader = PyPDFLoader(file_path)
@@ -54,21 +65,23 @@ class VectorStoreManager:
                     documents.extend(loader.load())
             except Exception as e:
                 print(f"Error loading file {file}: {e}")
-
-        if not documents:
-            print("No documents found to index.")
-            return None
-
-        # 텍스트 분할
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=600,
-            chunk_overlap=100
-        )
-        splits = text_splitter.split_documents(documents)
-
-        # FAISS 빌드 및 로컬 저장
-        self.vector_store = FAISS.from_documents(splits, self.get_embeddings())
-        self.vector_store.save_local(self.vector_db_dir)
+                continue
+                
+            if not documents:
+                continue
+                
+            splits = text_splitter.split_documents(documents)
+            
+            if splits:
+                temp_store = FAISS.from_documents(splits, self.get_embeddings())
+                if self.vector_store is None:
+                    self.vector_store = temp_store
+                else:
+                    self.vector_store.merge_from(temp_store)
+                
+        if self.vector_store:
+            self.vector_store.save_local(self.vector_db_dir)
+            
         return self.vector_store
         
     def add_single_document(self, file_path):
