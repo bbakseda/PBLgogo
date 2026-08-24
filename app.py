@@ -26,8 +26,9 @@ except:
 
 import json
 import requests
-from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL
+from config import OLLAMA_HOST, OLLAMA_MODEL, DATA_DIR, VECTOR_DB_DIR, GCS_BUCKET_NAME, GD_FOLDER_ID, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL, ADMIN_PASSWORD
 from backend.gcs_manager import GCSManager
+from backend.gdrive_manager import GDriveManager
 from backend.vector_store import VectorStoreManager
 from backend.rag_chain import RAGChainManager
 from backend.pdf_generator import markdown_to_pdf_bytes
@@ -55,6 +56,9 @@ def load_embeddings():
     )
 
 # 세션 상태 초기화
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
 if "gcs_manager" not in st.session_state:
     if GCS_BUCKET_NAME and (GOOGLE_APPLICATION_CREDENTIALS or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")):
         creds_path = GOOGLE_APPLICATION_CREDENTIALS
@@ -68,34 +72,73 @@ if "gcs_manager" not in st.session_state:
     else:
         st.session_state.gcs_manager = None
 
+if "gdrive_manager" not in st.session_state:
+    if GD_FOLDER_ID and (GOOGLE_APPLICATION_CREDENTIALS or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")):
+        creds_path = GOOGLE_APPLICATION_CREDENTIALS
+        if creds_path and not os.path.isabs(creds_path):
+            creds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), creds_path)
+            
+        st.session_state.gdrive_manager = GDriveManager(
+            folder_id=GD_FOLDER_ID,
+            credentials_path=creds_path if os.path.exists(creds_path) else None
+        )
+    else:
+        st.session_state.gdrive_manager = None
+
 if "vector_manager" not in st.session_state:
-    with st.spinner("교사용 AI 엔진 초기화 중... (최초 실행 시 다소 시간이 소요됩니다)"):
-        # GCS 동기화 외에 깃허브로 업로드되어 갱신된 data/ 내의 모든 교과/성취기준 파일들을 DATA_DIR로 자동 복사
-        import shutil
-        src_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-        if os.path.exists(src_data_dir):
-            for file_name in os.listdir(src_data_dir):
-                src_file = os.path.join(src_data_dir, file_name)
-                dst_file = os.path.join(DATA_DIR, file_name)
-                if os.path.isfile(src_file):
-                    # 파일이 없거나 최신 파일인 경우 자동 복사
-                    if not os.path.exists(dst_file) or os.path.getmtime(src_file) > os.path.getmtime(dst_file):
-                        shutil.copy(src_file, dst_file)
-            
-        embeddings = load_embeddings()
-        st.session_state.vector_manager = VectorStoreManager(DATA_DIR, VECTOR_DB_DIR, embeddings=embeddings)
+    # 🚨 교사용 AI 엔진 초기화 과정을 백분율(%)과 단계별 상태 메시지로 시각화하여 사용자의 지루함 해결
+    init_progress = st.progress(0.0)
+    init_status = st.empty()
+    
+    # 1단계: 교육 자료 동기화 (15%)
+    init_status.info("⏳ [1/4] RAG 교육 참고 자료를 연산 디렉토리로 동기화하는 중... (15%)")
+    init_progress.progress(0.15)
+    
+    import shutil
+    src_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    if os.path.exists(src_data_dir):
+        for file_name in os.listdir(src_data_dir):
+            src_file = os.path.join(src_data_dir, file_name)
+            dst_file = os.path.join(DATA_DIR, file_name)
+            if os.path.isfile(src_file):
+                # 파일이 없거나 최신 파일인 경우 자동 복사
+                if not os.path.exists(dst_file) or os.path.getmtime(src_file) > os.path.getmtime(dst_file):
+                    shutil.copy(src_file, dst_file)
         
-        # 1. 저장된 벡터 스토어 로드
-        vs = st.session_state.vector_manager.load_vector_store()
+    # 2단계: 문장 임베딩 모델 로드 (50%)
+    init_status.info("⏳ [2/4] 초등 교육 특화 한국어 문장 임베딩 모델(ko-sroberta)을 메모리에 적재하는 중... (50%)")
+    init_progress.progress(0.50)
+    embeddings = load_embeddings()
+    
+    # 3단계: 벡터스토어 로드 및 감지 (75%)
+    init_status.info("⏳ [3/4] 참고 문서 기반 벡터 데이터베이스(FAISS)를 로드 및 대조하는 중... (75%)")
+    init_progress.progress(0.75)
+    st.session_state.vector_manager = VectorStoreManager(DATA_DIR, VECTOR_DB_DIR, embeddings=embeddings)
+    
+    # 1. 저장된 벡터 스토어 로드
+    vs = st.session_state.vector_manager.load_vector_store()
+    
+    # 2. 로컬 data/ 내의 파일 개수 파악
+    num_local_files = len([f for f in os.listdir(DATA_DIR) if os.path.isfile(os.path.join(DATA_DIR, f))]) if os.path.exists(DATA_DIR) else 0
+    
+    # 3. 로드에 실패했거나, 혹은 새로운 교육 문서 파일이 추가된 경우 (1개 초과) 강제 갱신 빌드
+    if not vs or num_local_files > 1:
+        init_status.info("⏳ [3.5/4] 신규 교육 자료 감지: 지식 데이터베이스(FAISS Index)를 재생성하는 중... (85%)")
+        init_progress.progress(0.85)
+        vs = st.session_state.vector_manager.build_vector_store()
         
-        # 2. 로컬 data/ 내의 파일 개수 파악
-        num_local_files = len([f for f in os.listdir(DATA_DIR) if os.path.isfile(os.path.join(DATA_DIR, f))]) if os.path.exists(DATA_DIR) else 0
-        
-        # 3. 로드에 실패했거나, 혹은 새로운 교육 문서 파일이 추가된 경우 (1개 초과) 강제 갱신 빌드
-        if not vs or num_local_files > 1:
-            vs = st.session_state.vector_manager.build_vector_store()
-            
-        st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
+    # 4단계: 하이브리드 RAG 체인 오케스트레이션 (95%)
+    init_status.info("⏳ [4/4] 로컬/클라우드 하이브리드 RAG 교수 설계 체인을 활성화하는 중... (95%)")
+    init_progress.progress(0.95)
+    st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
+    
+    # 완료 (100% 및 청소)
+    init_status.success("✅ 교사용 RAG AI 비서 엔진 로딩 완료! (100%)")
+    init_progress.progress(1.0)
+    import time
+    time.sleep(1)
+    init_status.empty()
+    init_progress.empty()
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -215,52 +258,210 @@ ai_service_available = ollama_connected or bool(GEMINI_API_KEY)
 
 # 사이드바
 with st.sidebar:
-    st.markdown("### 🏫 교육 자료 저장소 설정")
-    
-    gcs_active = st.session_state.gcs_manager and st.session_state.gcs_manager.is_connected()
-    
-    if gcs_active:
-        st.success(f"☁️ **구글 클라우드 교재 연동 완료**\n- 버킷: `{st.session_state.gcs_manager.bucket_name}`")
-    else:
-        st.info("💻 **로컬 기본 자료 모드**\n- 내장 교육과정 문서로 구동됩니다.")
+    if st.session_state.is_admin:
+        # --- 관리자 모드 사이드바 ---
+        st.markdown("### ⚙️ [관리자 모드] 저장소 설정")
         
-    with st.expander("⚙️ 구글 클라우드 상세 연결 설정"):
-        st.caption("학교 전용 클라우드 스토리지를 연결하려면 자격증명 파일(.json)과 버킷명을 지정해 주세요.")
-        uploaded_key = st.file_uploader("GCP 서비스 계정 JSON 키 파일 업로드", type=["json"])
-        manual_bucket = st.text_input("GCS 버킷명 입력", value=GCS_BUCKET_NAME if GCS_BUCKET_NAME else "")
-        if uploaded_key and manual_bucket:
-            try:
-                key_data = json.load(uploaded_key)
-                st.session_state.gcs_manager = GCSManager(
-                    bucket_name=manual_bucket,
-                    credentials_info=key_data
-                )
-                st.success("수동 자격 증명으로 연결되었습니다!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"인증 파일 오류: {e}")
+        storage_mode = st.radio(
+            "사용할 원격 저장소 선택",
+            ["구글 드라이브 (GDrive)", "구글 클라우드 (GCS)", "로컬 전용"],
+            index=0 if GD_FOLDER_ID else (1 if GCS_BUCKET_NAME else 2)
+        )
+        
+        gcs_active = st.session_state.gcs_manager and st.session_state.gcs_manager.is_connected()
+        gdrive_active = st.session_state.gdrive_manager and st.session_state.gdrive_manager.is_connected()
+        
+        if storage_mode == "구글 드라이브 (GDrive)":
+            if gdrive_active:
+                st.success(f"📁 **구글 드라이브 연동 완료**\n- 폴더: `{GD_FOLDER_ID[:15]}...`")
+            else:
+                st.info("💻 **로컬 기본 자료 모드**\n- 구글 드라이브 설정이 유효하지 않습니다.")
                 
-    st.markdown("---")
-    st.markdown("### 📥 교육 자료 동기화")
-    st.caption("클라우드에 새로 수집한 교과서나 학습 지도서 문서를 가져와 인공지능에 학습시킵니다.")
-    
-    if st.button("✨ 내 구글 클라우드 자료 동기화 및 학습", use_container_width=True, type="primary"):
-        if not st.session_state.gcs_manager or not st.session_state.gcs_manager.is_connected():
-            st.warning("연결된 구글 클라우드가 없습니다. 로컬 기본 자료를 바탕으로 인덱싱을 수행합니다.")
-            with st.spinner("로컬 교과 가이드북 학습 중..."):
-                vs = st.session_state.vector_manager.build_vector_store()
-                if vs:
-                    st.session_state.rag_manager.set_vector_store(vs)
-                    st.success("로컬 참고자료 동기화 완료!")
+            with st.expander("⚙️ 구글 드라이브 상세 연결 설정"):
+                st.caption("공유 폴더를 연결하려면 자격증명 파일(.json)과 폴더 ID를 지정해 주세요.")
+                gd_key = st.file_uploader("GCP 서비스 계정 JSON 키 업로드 (GDrive)", type=["json"], key="gd_key_uploader")
+                gd_folder = st.text_input("구글 드라이브 폴더 ID", value=GD_FOLDER_ID if GD_FOLDER_ID else "", key="gd_folder_input")
+                if gd_key and gd_folder:
+                    try:
+                        key_data = json.load(gd_key)
+                        st.session_state.gdrive_manager = GDriveManager(
+                            folder_id=gd_folder,
+                            credentials_info=key_data
+                        )
+                        st.success("구글 드라이브가 수동 연결되었습니다!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"인증 파일 오류: {e}")
+                        
+        elif storage_mode == "구글 클라우드 (GCS)":
+            if gcs_active:
+                st.success(f"☁️ **구글 클라우드 연동 완료**\n- 버킷: `{st.session_state.gcs_manager.bucket_name}`")
+            else:
+                st.info("💻 **로컬 기본 자료 모드**\n- 구글 클라우드 설정이 유효하지 않습니다.")
+                
+            with st.expander("⚙️ 구글 클라우드 상세 연결 설정"):
+                st.caption("클라우드 스토리지를 연결하려면 자격증명 파일(.json)과 버킷명을 지정해 주세요.")
+                uploaded_key = st.file_uploader("GCP 서비스 계정 JSON 키 파일 업로드", type=["json"], key="gcs_key_uploader")
+                manual_bucket = st.text_input("GCS 버킷명 입력", value=GCS_BUCKET_NAME if GCS_BUCKET_NAME else "", key="gcs_bucket_input")
+                if uploaded_key and manual_bucket:
+                    try:
+                        key_data = json.load(uploaded_key)
+                        st.session_state.gcs_manager = GCSManager(
+                            bucket_name=manual_bucket,
+                            credentials_info=key_data
+                        )
+                        st.success("구글 클라우드가 수동 연결되었습니다!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"인증 파일 오류: {e}")
         else:
-            with st.spinner("구글 클라우드에서 최신 자료 가져오는 중..."):
-                downloaded = st.session_state.gcs_manager.sync_all_files(DATA_DIR)
-                st.success(f"클라우드로부터 {len(downloaded)}개 문서 다운로드 완료!")
-            with st.spinner("자료 분석 및 벡터 DB화 진행 중..."):
-                vs = st.session_state.vector_manager.build_vector_store()
-                if vs:
-                    st.session_state.rag_manager.set_vector_store(vs)
-                    st.success("구글 클라우드 문서 학습 완료!")
+            st.info("💻 **로컬 전용 모드**\n- 원격 동기화 없이 로컬 캐시 데이터로만 작동합니다.")
+            
+        st.markdown("---")
+        st.markdown("### 📥 교육 자료 동기화")
+        st.caption("원격지 저장소에 보관한 최신 문서를 다운로드하거나 빌드된 벡터 데이터베이스를 바로 로딩합니다.")
+        
+        if st.button("✨ 원격 자료 동기화 및 학습 적용", use_container_width=True, type="primary"):
+            if storage_mode == "구글 드라이브 (GDrive)":
+                if not st.session_state.gdrive_manager or not st.session_state.gdrive_manager.is_connected():
+                    st.warning("연결된 구글 드라이브가 없습니다. 로컬 캐시를 사용합니다.")
+                else:
+                    with st.spinner("구글 드라이브에서 최신 학습 가이드 및 빌드 인덱스 가져오는 중..."):
+                        try:
+                            gdrive = st.session_state.gdrive_manager
+                            files = gdrive.list_files()
+                            downloaded_docs = []
+                            downloaded_indices = 0
+                            for f in files:
+                                if f in ["index.faiss", "index.pkl"]:
+                                    path = gdrive.download_file(f, VECTOR_DB_DIR)
+                                    if path:
+                                        downloaded_indices += 1
+                                else:
+                                    path = gdrive.download_file(f, DATA_DIR)
+                                    if path:
+                                        downloaded_docs.append(path)
+                                        
+                            if downloaded_indices == 2:
+                                st.success("🎉 구글 드라이브에서 빌드 완료된 FAISS 벡터 인덱스를 다운로드하여 동기화했습니다!")
+                                vs = st.session_state.vector_manager.load_vector_store()
+                                if vs:
+                                    st.session_state.rag_manager.set_vector_store(vs)
+                                    st.success("로컬 AI 세션에 동기화 완료!")
+                            else:
+                                st.info(f"구글 드라이브로부터 {len(downloaded_docs)}개 문서를 다운로드했습니다.")
+                                with st.spinner("로컬에서 신규 벡터 데이터베이스 빌드 중..."):
+                                    vs = st.session_state.vector_manager.build_vector_store()
+                                    if vs:
+                                        st.session_state.rag_manager.set_vector_store(vs)
+                                        st.success("로컬 빌드 및 학습 완료!")
+                        except Exception as gd_sync_err:
+                            st.error(f"구글 드라이브 동기화 실패: {gd_sync_err}")
+                            
+            elif storage_mode == "구글 클라우드 (GCS)":
+                if not st.session_state.gcs_manager or not st.session_state.gcs_manager.is_connected():
+                    st.warning("연결된 구글 클라우드가 없습니다. 로컬 캐시를 사용합니다.")
+                else:
+                    with st.spinner("구글 클라우드에서 최신 자료 가져오는 중..."):
+                        downloaded = st.session_state.gcs_manager.sync_all_files(DATA_DIR)
+                        st.success(f"클라우드로부터 {len(downloaded)}개 문서 다운로드 완료!")
+                    with st.spinner("자료 분석 및 벡터 DB화 진행 중..."):
+                        vs = st.session_state.vector_manager.build_vector_store()
+                        if vs:
+                            st.session_state.rag_manager.set_vector_store(vs)
+                            st.success("구글 클라우드 문서 학습 완료!")
+            else:
+                with st.spinner("로컬 참고자료 동기화 및 학습 중..."):
+                    vs = st.session_state.vector_manager.build_vector_store()
+                    if vs:
+                        st.session_state.rag_manager.set_vector_store(vs)
+                        st.success("로컬 데이터 동기화 완료!")
+                        
+        st.markdown("---")
+        if st.button("🔓 관리자 모드 로그아웃", key="admin_logout_btn", use_container_width=True):
+            st.session_state.is_admin = False
+            st.success("일반 사용자 모드로 전환되었습니다.")
+            st.rerun()
+            
+    else:
+        # --- 일반 사용자(교사) 모드 사이드바 ---
+        st.markdown("### 🏫 교육 자료 저장소")
+        
+        # 내부적인 동기화 모드 탐색
+        storage_mode = "구글 드라이브 (GDrive)" if GD_FOLDER_ID else ("구글 클라우드 (GCS)" if GCS_BUCKET_NAME else "로컬 전용")
+        gcs_active = st.session_state.gcs_manager and st.session_state.gcs_manager.is_connected()
+        gdrive_active = st.session_state.gdrive_manager and st.session_state.gdrive_manager.is_connected()
+        
+        if storage_mode == "구글 드라이브 (GDrive)" and gdrive_active:
+            st.success("🟢 **교육 가이드라인 연동 중**\n- 클라우드 최신 기준 자동 반영")
+        elif storage_mode == "구글 클라우드 (GCS)" and gcs_active:
+            st.success("🟢 **교육 가이드라인 연동 중**\n- 구글 클라우드 버킷 연동 중")
+        else:
+            st.info("💻 **로컬 기본 참고서 모드**\n- 네트워크 연결이 제한된 오프라인 교안으로 작동합니다.")
+            
+        st.markdown("---")
+        st.markdown("### 📥 교과 및 성취기준 업데이트")
+        st.caption("연동된 교육자료 클라우드 저장소로부터 교육과정 성취기준 및 새로운 실습 자료를 원클릭으로 동기화합니다.")
+        
+        if st.button("🔄 최신 교육 자료 동기화 및 업데이트", use_container_width=True, type="primary"):
+            if storage_mode == "구글 드라이브 (GDrive)" and gdrive_active:
+                with st.spinner("원격 저장소로부터 최신 교육 자료 동기화 중..."):
+                    try:
+                        gdrive = st.session_state.gdrive_manager
+                        files = gdrive.list_files()
+                        downloaded_docs = []
+                        downloaded_indices = 0
+                        for f in files:
+                            if f in ["index.faiss", "index.pkl"]:
+                                path = gdrive.download_file(f, VECTOR_DB_DIR)
+                                if path:
+                                    downloaded_indices += 1
+                            else:
+                                path = gdrive.download_file(f, DATA_DIR)
+                                if path:
+                                    downloaded_docs.append(path)
+                                    
+                        if downloaded_indices == 2:
+                            st.success("🎉 최신 벡터 데이터베이스를 구글 드라이브로부터 즉각 반영했습니다!")
+                            vs = st.session_state.vector_manager.load_vector_store()
+                            if vs:
+                                st.session_state.rag_manager.set_vector_store(vs)
+                                st.success("AI 비서 업데이트 완료!")
+                        else:
+                            with st.spinner("로컬에서 인덱스 갱신 빌드 중..."):
+                                vs = st.session_state.vector_manager.build_vector_store()
+                                if vs:
+                                    st.session_state.rag_manager.set_vector_store(vs)
+                                    st.success("AI 비서 빌드 완료!")
+                    except Exception as e:
+                        st.error(f"동기화 중 오류 발생: {e}")
+            elif storage_mode == "구글 클라우드 (GCS)" and gcs_active:
+                with st.spinner("원격 구글 클라우드 동기화 진행 중..."):
+                    try:
+                        downloaded = st.session_state.gcs_manager.sync_all_files(DATA_DIR)
+                        vs = st.session_state.vector_manager.build_vector_store()
+                        if vs:
+                            st.session_state.rag_manager.set_vector_store(vs)
+                            st.success(f"성공! {len(downloaded)}개 교재를 갱신 및 학습시켰습니다.")
+                    except Exception as e:
+                        st.error(f"동기화 중 오류: {e}")
+            else:
+                with st.spinner("내부 교재 목록 인덱싱 중..."):
+                    vs = st.session_state.vector_manager.build_vector_store()
+                    if vs:
+                        st.session_state.rag_manager.set_vector_store(vs)
+                        st.success("로컬 성취기준 인덱싱 완료!")
+                        
+        st.markdown("---")
+        with st.expander("🔐 시스템 관리자 모드"):
+            admin_pw = st.text_input("관리자 인증 암호 입력", type="password", key="admin_pwd_widget")
+            if st.button("로그인", key="admin_login_btn", use_container_width=True):
+                if admin_pw == ADMIN_PASSWORD:
+                    st.session_state.is_admin = True
+                    st.success("인증 성공! 관리자 설정 대시보드가 개방되었습니다.")
+                    st.rerun()
+                else:
+                    st.error("인증 암호가 올바르지 않습니다.")
 
     st.markdown("---")
     st.markdown("### 🖥️ AI 엔진 및 연결 요약")
@@ -287,13 +488,20 @@ with st.sidebar:
     st.markdown(f"- **현재 활성 엔진:** `{engine_name}`")
     st.markdown(f"- **학습 완료된 교과 문서:** `{num_files}`개")
 
-# 탭 구성
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📅 상세 수업 계획 및 지도안 설계", 
-    "📊 수업 결과 보고 및 평가서 작성", 
-    "💬 초등 교육과정 Q&A AI 비서",
-    "⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서"
-])
+# 탭 구성 (관리자 모드 여부에 따라 분기)
+if st.session_state.is_admin:
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📅 상세 수업 계획 및 지도안 설계", 
+        "📊 수업 결과 보고 및 평가서 작성", 
+        "💬 초등 교육과정 Q&A AI 비서",
+        "⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서"
+    ])
+else:
+    tab1, tab2, tab3 = st.tabs([
+        "📅 상세 수업 계획 및 지도안 설계", 
+        "📊 수업 결과 보고 및 평가서 작성", 
+        "💬 초등 교육과정 Q&A AI 비서"
+    ])
 
 # 탭 1: 상세 수업 계획 설계
 with tab1:
@@ -570,112 +778,123 @@ with tab3:
                 except Exception as e:
                     st.error(f"질의응답 오류: {e}")
 
-# 탭 4: GPU 가속 인덱서
-with tab4:
-    st.subheader("⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서")
-    st.markdown("외솔.한국 RAG 홈페이지 백엔드 탑재 및 대량의 교육과정 참고 문서를 고속 임베딩하기 위한 가속 모듈입니다.")
-    
-    col_system, col_settings = st.columns([1, 1.2])
-    
-    with col_system:
-        st.markdown("### 🖥️ 시스템 인프라 현황")
-        if cuda_available:
-            st.success(f"🟢 **GPU 가속(CUDA) 활성화됨**\n- 디바이스명: `{gpu_name}`")
-            try:
-                allocated_mem = torch.cuda.memory_allocated(0) / (1024 ** 2)
-                cached_mem = torch.cuda.memory_reserved(0) / (1024 ** 2)
-                st.info(f"💾 **GPU 메모리 상태**\n- 할당된 메모리: `{allocated_mem:.1f} MB`\n- 캐시된 메모리: `{cached_mem:.1f} MB`")
-            except Exception:
-                pass
-        else:
-            st.warning("🟡 **CPU 연산 모드 (GPU 사용 불가)**\n- GPU 가속이 비활성화 상태입니다. 대용량 문서 인덱싱 속도가 다소 느려질 수 있습니다.")
-            st.info("""
-            💡 **GPU 가속(CUDA)을 활성화하려면:**
-            1. NVIDIA 그래픽 드라이버 설치
-            2. 로컬 가상 환경에 CUDA 버전의 PyTorch 재설치:
-            ```bash
-            pip uninstall torch torchvision -y
-            pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-            ```
-            """)
+# 탭 4: GPU 가속 인덱서 (관리자 전용)
+if st.session_state.is_admin:
+    with tab4:
+        st.subheader("⚡ 대용량 PDF-to-FAISS GPU 가속 인덱서")
+        st.markdown("외솔.한국 RAG 홈페이지 백엔드 탑재 및 대량의 교육과정 참고 문서를 고속 임베딩하기 위한 가속 모듈입니다.")
+        
+        col_system, col_settings = st.columns([1, 1.2])
+        
+        with col_system:
+            st.markdown("### 🖥️ 시스템 인프라 현황")
+            if cuda_available:
+                st.success(f"🟢 **GPU 가속(CUDA) 활성화됨**\n- 디바이스명: `{gpu_name}`")
+                try:
+                    allocated_mem = torch.cuda.memory_allocated(0) / (1024 ** 2)
+                    cached_mem = torch.cuda.memory_reserved(0) / (1024 ** 2)
+                    st.info(f"💾 **GPU 메모리 상태**\n- 할당된 메모리: `{allocated_mem:.1f} MB`\n- 캐시된 메모리: `{cached_mem:.1f} MB`")
+                except Exception:
+                    pass
+            else:
+                st.warning("🟡 **CPU 연산 모드 (GPU 사용 불가)**\n- GPU 가속이 비활성화 상태입니다. 대용량 문서 인덱싱 속도가 다소 느려질 수 있습니다.")
+                st.info("""
+                💡 **GPU 가속(CUDA)을 활성화하려면:**
+                1. NVIDIA 그래픽 드라이버 설치
+                2. 로컬 가상 환경에 CUDA 버전의 PyTorch 재설치:
+                ```bash
+                pip uninstall torch torchvision -y
+                pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+                ```
+                """)
+                
+            st.markdown("---")
+            st.markdown("### ☁️ 클라우드 연동 상태 (GCS / GDrive)")
+            has_gcs = bool(GCS_BUCKET_NAME)
+            has_gdrive = bool(GD_FOLDER_ID)
             
-        st.markdown("---")
-        st.markdown("### ☁️ 클라우드 연동 상태 (GCS)")
-        has_gcs = bool(GCS_BUCKET_NAME)
-        if has_gcs:
-            st.success(f"✅ **GCS 버킷 설정됨**: `{GCS_BUCKET_NAME}`")
+            if has_gcs:
+                st.success(f"✅ **GCS 버킷 설정됨**: `{GCS_BUCKET_NAME}`")
+            if has_gdrive:
+                st.success(f"✅ **구글 드라이브 폴더 설정됨**: `{GD_FOLDER_ID[:12]}...`")
+                
             if GOOGLE_APPLICATION_CREDENTIALS:
                 st.caption(f"자격증명 경로: `{os.path.basename(GOOGLE_APPLICATION_CREDENTIALS)}`")
-        else:
-            st.warning("⚠️ **GCS 버킷 설정 없음**: 빌드 후 로컬 파일 저장만 수행 가능합니다.")
+                
+            if not has_gcs and not has_gdrive:
+                st.warning("⚠️ **연동된 원격 저장소 없음**: 빌드 후 로컬 파일 저장만 수행 가능합니다.")
+                
+        with col_settings:
+            st.markdown("### ⚙️ 인덱싱 구성 설정")
             
-    with col_settings:
-        st.markdown("### ⚙️ 인덱싱 구성 설정")
-        
-        idx_input_path = st.text_input("📁 PDF 입력 디렉토리 경로 (학습 데이터 폴더)", value=DATA_DIR, key="idx_input_path")
-        idx_output_path = st.text_input("📁 FAISS 출력 디렉토리 경로 (벡터스토어 저장소)", value=VECTOR_DB_DIR, key="idx_output_path")
-        
-        idx_model_name = st.text_input("🏷️ 임베딩 모델 (HuggingFace)", value="jhgan/ko-sroberta-multitask", key="idx_model_name")
-        
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            idx_chunk_size = st.number_input("청크 크기 (글자 수)", min_value=100, max_value=2000, value=600, step=50, key="idx_chunk_size")
-            idx_overlap = st.number_input("청크 오버랩 (글자 수)", min_value=0, max_value=1000, value=100, step=10, key="idx_overlap")
-        with col_c2:
-            idx_batch_size = st.number_input("배치 처리 파일 수 (OOM 방지)", min_value=1, max_value=200, value=20, step=5, key="idx_batch_size")
-            idx_upload_gcs = st.checkbox("인덱싱 완료 후 구글 클라우드에 자동 업로드", value=has_gcs, disabled=not has_gcs, key="idx_upload_gcs")
+            idx_input_path = st.text_input("📁 PDF 입력 디렉토리 경로 (학습 데이터 폴더)", value=DATA_DIR, key="idx_input_path")
+            idx_output_path = st.text_input("📁 FAISS 출력 디렉토리 경로 (벡터스토어 저장소)", value=VECTOR_DB_DIR, key="idx_output_path")
             
-        run_idx_btn = st.button("🚀 GPU 가속 인덱싱 시작", type="primary", use_container_width=True, key="run_idx_btn")
+            idx_model_name = st.text_input("🏷️ 임베딩 모델 (HuggingFace)", value="jhgan/ko-sroberta-multitask", key="idx_model_name")
+            
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                idx_chunk_size = st.number_input("청크 크기 (글자 수)", min_value=100, max_value=2000, value=600, step=50, key="idx_chunk_size")
+                idx_overlap = st.number_input("청크 오버랩 (글자 수)", min_value=0, max_value=1000, value=100, step=10, key="idx_overlap")
+            with col_c2:
+                idx_batch_size = st.number_input("배치 처리 파일 수 (OOM 방지)", min_value=1, max_value=200, value=20, step=5, key="idx_batch_size")
+                idx_upload_gcs = st.checkbox("GCS 버킷에 자동 업로드", value=has_gcs, disabled=not has_gcs, key="idx_upload_gcs")
+                idx_upload_gdrive = st.checkbox("구글 드라이브 폴더에 자동 업로드", value=has_gdrive, disabled=not has_gdrive, key="idx_upload_gdrive")
+                
+            run_idx_btn = st.button("🚀 GPU 가속 인덱싱 시작", type="primary", use_container_width=True, key="run_idx_btn")
 
-    st.markdown("---")
-    st.markdown("### 📊 인덱싱 진행 과정 및 로깅")
-    
-    idx_log_area = st.empty()
-    idx_progress_bar = st.progress(0.0)
-    idx_status_text = st.empty()
-    
-    if run_idx_btn:
-        idx_logs = []
-        idx_log_placeholder = st.empty()
+        st.markdown("---")
+        st.markdown("### 📊 인덱싱 진행 과정 및 로깅")
         
-        def app_gui_callback(msg_type, data):
-            if msg_type == "log":
-                idx_logs.append(data)
-                idx_log_placeholder.code("\n".join(idx_logs[-15:]))
-            elif msg_type == "progress":
-                idx_progress_bar.progress(data["percent"])
-                idx_status_text.write(data["text"])
-                
-        try:
-            idx_status_text.write("⏳ 인덱싱 초기화 진행 중...")
-            success, files, chunks = run_indexing(
-                input_dir=idx_input_path,
-                output_dir=idx_output_path,
-                model_name=idx_model_name,
-                file_batch_size=idx_batch_size,
-                text_chunk_size=idx_chunk_size,
-                text_chunk_overlap=idx_overlap,
-                upload_gcs=idx_upload_gcs,
-                progress_callback=app_gui_callback
-            )
+        idx_log_area = st.empty()
+        idx_progress_bar = st.progress(0.0)
+        idx_status_text = st.empty()
+        
+        if run_idx_btn:
+            idx_logs = []
+            idx_log_placeholder = st.empty()
             
-            if success:
-                st.success(f"🎉 **인덱싱 완료!** 총 {files}개 파일에서 {chunks}개의 벡터 청크를 성공적으로 가속 처리하여 저장 완료했습니다.")
-                if idx_upload_gcs:
-                    st.info("☁️ 빌드된 FAISS 데이터베이스가 외솔.한국 RAG 홈페이지가 호스팅되는 구글 클라우드에 성공적으로 반영되었습니다.")
+            def app_gui_callback(msg_type, data):
+                if msg_type == "log":
+                    idx_logs.append(data)
+                    idx_log_placeholder.code("\n".join(idx_logs[-15:]))
+                elif msg_type == "progress":
+                    idx_progress_bar.progress(data["percent"])
+                    idx_status_text.write(data["text"])
+                    
+            try:
+                idx_status_text.write("⏳ 인덱싱 초기화 진행 중...")
+                success, files, chunks = run_indexing(
+                    input_dir=idx_input_path,
+                    output_dir=idx_output_path,
+                    model_name=idx_model_name,
+                    file_batch_size=idx_batch_size,
+                    text_chunk_size=idx_chunk_size,
+                    text_chunk_overlap=idx_overlap,
+                    upload_gcs=idx_upload_gcs,
+                    upload_gdrive=idx_upload_gdrive,
+                    progress_callback=app_gui_callback
+                )
                 
-                # 인덱서가 완료되면 현재 앱의 RAG 엔진에 사용 중인 벡터 스토어도 새로 고침
-                if "vector_manager" in st.session_state and "rag_manager" in st.session_state:
-                    try:
-                        vs = st.session_state.vector_manager.load_vector_store()
-                        if vs:
-                            st.session_state.rag_manager.set_vector_store(vs)
-                            st.info("🔄 **현재 앱 세션의 AI 엔진 참조 데이터베이스 동기화 완료!**")
-                    except Exception as reload_err:
-                        st.warning(f"참조 DB 자동 동기화 중 경고: {reload_err}")
-            else:
-                st.error("❌ 인덱싱 작업 중 문제 또는 데이터 없음으로 인해 중단되었습니다. 로그를 확인하십시오.")
-        except Exception as e:
-            st.error(f"💥 인덱싱 중 런타임 예외가 발생했습니다: {e}")
-            import traceback
-            st.code(traceback.format_exc())
+                if success:
+                    st.success(f"🎉 **인덱싱 완료!** 총 {files}개 파일에서 {chunks}개의 벡터 청크를 성공적으로 가속 처리하여 저장 완료했습니다.")
+                    if idx_upload_gcs:
+                        st.info("☁️ 빌드된 FAISS 데이터베이스가 구글 클라우드 스토리지(GCS)에 성공적으로 반영되었습니다.")
+                    if idx_upload_gdrive:
+                        st.info("☁️ 빌드된 FAISS 데이터베이스가 구글 드라이브(Google Drive) 공유 폴더에 성공적으로 반영되었습니다.")
+                    
+                    # 인덱서가 완료되면 현재 앱의 RAG 엔진에 사용 중인 벡터 스토어도 새로 고침
+                    if "vector_manager" in st.session_state and "rag_manager" in st.session_state:
+                        try:
+                            vs = st.session_state.vector_manager.load_vector_store()
+                            if vs:
+                                st.session_state.rag_manager.set_vector_store(vs)
+                                st.info("🔄 **현재 앱 세션의 AI 엔진 참조 데이터베이스 동기화 완료!**")
+                        except Exception as reload_err:
+                            st.warning(f"참조 DB 자동 동기화 중 경고: {reload_err}")
+                else:
+                    st.error("❌ 인덱싱 작업 중 문제 또는 데이터 없음으로 인해 중단되었습니다. 로그를 확인하십시오.")
+            except Exception as e:
+                st.error(f"💥 인덱싱 중 런타임 예외가 발생했습니다: {e}")
+                import traceback
+                st.code(traceback.format_exc())
