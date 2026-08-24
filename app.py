@@ -121,8 +121,8 @@ if "vector_manager" not in st.session_state:
     # 2. 로컬 data/ 내의 파일 개수 파악
     num_local_files = len([f for f in os.listdir(DATA_DIR) if os.path.isfile(os.path.join(DATA_DIR, f))]) if os.path.exists(DATA_DIR) else 0
     
-    # 3. 로드에 실패했거나, 혹은 새로운 교육 문서 파일이 추가된 경우 (1개 초과) 강제 갱신 빌드
-    if not vs or num_local_files > 1:
+    # 3. 디스크에 빌드된 벡터스토어 파일이 완전히 부재할 때만 (최초 1회) 자동 빌드 실행
+    if not vs:
         def build_progress_callback(percent, status_text):
             init_status.info(status_text)
             init_progress.progress(percent)
