@@ -63,6 +63,24 @@ def load_embeddings():
         model_kwargs={'device': 'cpu'}
     )
 
+from backend.queue_manager import GlobalQueueManager
+import uuid
+
+# 🚨 전역 대기열 매니저 획득 (모든 스레드 세션이 공유하는 싱글톤 객체)
+@st.cache_resource
+def get_queue_manager():
+    return GlobalQueueManager()
+
+queue_manager = get_queue_manager()
+
+# 🚨 세션 고유 식별자 생성 및 대기열 등록/하트비트 가동
+if "session_uuid" not in st.session_state:
+    st.session_state.session_uuid = str(uuid.uuid4())
+
+session_id = st.session_state.session_uuid
+my_animal_name = queue_manager.register_user(session_id)
+queue_manager.keep_alive(session_id)
+
 # 세션 상태 초기화
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
@@ -165,6 +183,10 @@ if "temp_sim_report" not in st.session_state:
     st.session_state.temp_sim_report = ""
 if "temp_ref_docs" not in st.session_state:
     st.session_state.temp_ref_docs = []
+if "temp_report" not in st.session_state:
+    st.session_state.temp_report = ""
+if "temp_report_ref_docs" not in st.session_state:
+    st.session_state.temp_report_ref_docs = []
 
 # 고급스러운 다크/블루 톤 테마 CSS
 st.markdown("""
@@ -504,6 +526,26 @@ with st.sidebar:
         
     st.markdown(f"- **현재 활성 엔진:** `{engine_name}`")
     st.markdown(f"- **학습 완료된 교과 문서:** `{num_files}`개")
+    
+    st.markdown("---")
+    st.markdown("### 🦄 교사용 AI 대기열 현황")
+    
+    # 실시간 대기열 상태 데이터 획득
+    queue_status = queue_manager.get_queue_status(session_id)
+    st.markdown(f"- 🏷️ **나의 닉네임:** `{queue_status['my_name']}(나)`")
+    
+    if queue_status['is_my_turn']:
+        st.success("🟢 **지금 생성하실 수 있습니다!**")
+    else:
+        st.warning(f"⏳ **대기 중:** `내 순서: {queue_status['my_turn']}번째` (현재 집필 중: `{queue_status['active_user_name']}`)")
+        
+    # 대기열 목록 표시
+    with st.expander(f"📋 대기열 목록 ({queue_status['total_waiting']}명)"):
+        for idx, name in enumerate(queue_status['queue_list']):
+            if name == queue_status['my_name']:
+                st.markdown(f"**{idx+1}. {name}(나)**")
+            else:
+                st.markdown(f"{idx+1}. {name}")
 
 # 탭 구성 (관리자 모드 여부에 따라 분기)
 if st.session_state.is_admin:
@@ -555,38 +597,44 @@ with tab1:
             if not proj_title or not learning_goals:
                 st.error("수업 주제와 핵심 학습 목표를 반드시 입력해 주세요.")
             else:
-                # 1단계: 계획서 생성
-                with st.spinner("AI 엔진이 상세 수업계획서를 집필 중입니다..."):
+                # 🚨 대기열 검문소 가동 (동시 생성 시 1순위 독점 보장)
+                status = queue_manager.get_queue_status(session_id)
+                if not status['is_my_turn']:
+                    st.error(f"🚨 아직 회원님의 차례가 아닙니다. 현재 `{status['active_user_name']}`님이 AI를 점유 중입니다. 회원님은 `{status['my_turn']}번째` 대기 중입니다.")
+                else:
                     try:
-                        plan_result, ref_docs = st.session_state.rag_manager.generate_study_plan(
-                            project_title=proj_title,
-                            learning_goals=learning_goals,
-                            duration=duration,
-                            level=level,
-                            model_type=model_type,
-                            additional_requirements=add_reqs
-                        )
-                        st.session_state.temp_plan = plan_result
-                        st.session_state.temp_ref_docs = ref_docs
-                        st.session_state.temp_sim_report = "" # 초기화
-                    except Exception as e:
-                        import traceback
-                        st.error(f"계획서 생성 실패: {e}\n\n{traceback.format_exc()}")
-                        
-                # 2단계: 일괄 생성 시 결과 보고서도 연속 생성
-                if generate_both_btn and st.session_state.temp_plan:
-                    with st.spinner("이 계획에 기반한 가상의 결과 보고서를 시뮬레이션하여 작성 중입니다..."):
-                        try:
-                            sim_report = st.session_state.rag_manager.generate_simulated_report(
+                        # 1단계: 계획서 생성
+                        with st.spinner("AI 엔진이 상세 수업계획서를 집필 중입니다..."):
+                            plan_result, ref_docs = st.session_state.rag_manager.generate_study_plan(
                                 project_title=proj_title,
                                 learning_goals=learning_goals,
-                                plan_content=st.session_state.temp_plan,
+                                duration=duration,
                                 level=level,
-                                model_type=model_type
+                                model_type=model_type,
+                                additional_requirements=add_reqs
                             )
-                            st.session_state.temp_sim_report = sim_report
-                        except Exception as e:
-                            st.error(f"가상 보고서 생성 실패: {e}")
+                            st.session_state.temp_plan = plan_result
+                            st.session_state.temp_ref_docs = ref_docs
+                            st.session_state.temp_sim_report = "" # 초기화
+                            
+                        # 2단계: 일괄 생성 시 결과 보고서도 연속 생성
+                        if generate_both_btn and st.session_state.temp_plan:
+                            with st.spinner("이 계획에 기반한 가상의 결과 보고서를 시뮬레이션하여 작성 중입니다..."):
+                                sim_report = st.session_state.rag_manager.generate_simulated_report(
+                                    project_title=proj_title,
+                                    learning_goals=learning_goals,
+                                    plan_content=st.session_state.temp_plan,
+                                    level=level,
+                                    model_type=model_type
+                                )
+                                st.session_state.temp_sim_report = sim_report
+                    except Exception as e:
+                        import traceback
+                        st.error(f"생성 실패: {e}\n\n{traceback.format_exc()}")
+                    finally:
+                        # 🚨 연산 완료/예외 발생 무관하게 즉시 대기열 자격을 밀어주고 뒤 차례 대기자로 넘김
+                        queue_manager.release_turn(session_id)
+                        st.rerun()
 
         # Y축 겹침/증발 없는 세션 데이터 기반 렌더링
         if st.session_state.temp_plan:
@@ -707,52 +755,66 @@ with tab2:
             if not rep_title or not implementations:
                 st.error("수업 주제와 활동 내용을 기입해 주세요.")
             else:
-                with st.spinner("AI 장학 비서가 수업 평가 보고서를 작성하고 있습니다..."):
+                # 🚨 대기열 검문소 가동 (동시 생성 시 1순위 독점 보장)
+                status = queue_manager.get_queue_status(session_id)
+                if not status['is_my_turn']:
+                    st.error(f"🚨 아직 회원님의 차례가 아닙니다. 현재 `{status['active_user_name']}`님이 AI를 점유 중입니다. 회원님은 `{status['my_turn']}번째` 대기 중입니다.")
+                else:
                     try:
-                        report_result, ref_docs = st.session_state.rag_manager.generate_report(
-                            project_title=rep_title,
-                            implementations=implementations,
-                            troubleshooting=troubleshooting,
-                            outcomes=outcomes,
-                            additional_requirements=rep_add_reqs
-                        )
-                        
-                        if ref_docs and any(doc.metadata.get('source') for doc in ref_docs):
-                            st.info("🔍 **[구글 클라우드 RAG 모드 검증]** 분석에 교육과정 표준이 매핑되었습니다.")
-                        else:
-                            st.info("💡 **[Gemma-4 단독 모드]** 모델 내부의 초등 학업 성취 평가 노하우를 바탕으로 결과를 종합했습니다.")
-                            
-                        st.markdown(report_result)
-                        
-                        col_dl1, col_dl2 = st.columns([1, 1])
-                        with col_dl1:
-                            st.download_button(
-                                label="📥 결과 보고서(.md) 다운로드",
-                                data=report_result,
-                                file_name=f"수업결과보고_{rep_title.replace(' ', '_')}.md",
-                                mime="text/markdown",
-                                use_container_width=True
+                        with st.spinner("AI 장학 비서가 수업 평가 보고서를 작성하고 있습니다..."):
+                            report_result, ref_docs = st.session_state.rag_manager.generate_report(
+                                project_title=rep_title,
+                                implementations=implementations,
+                                troubleshooting=troubleshooting,
+                                outcomes=outcomes,
+                                additional_requirements=rep_add_reqs
                             )
-                        with col_dl2:
-                            try:
-                                pdf_data = markdown_to_pdf_bytes(report_result, title=f"수업결과보고: {rep_title}")
-                                st.download_button(
-                                    label="📥 PDF 파일(.pdf) 다운로드",
-                                    data=pdf_data,
-                                    file_name=f"수업결과보고_{rep_title.replace(' ', '_')}.pdf",
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
-                            except Exception as pdf_err:
-                                st.warning(f"PDF 생성 실패: {pdf_err}")
-                        
-                        if ref_docs:
-                            with st.expander("🔍 클라우드 인용 대조 (RAG 출처)"):
-                                for idx, doc in enumerate(ref_docs):
-                                    st.markdown(f"**[{idx+1}] {os.path.basename(doc.metadata.get('source', '알수없음'))} (Page {doc.metadata.get('page', 0)+1})**")
-                                    st.caption(doc.page_content[:300] + "...")
+                            st.session_state.temp_report = report_result
+                            st.session_state.temp_report_ref_docs = ref_docs
                     except Exception as e:
                         st.error(f"작성 실패: {e}")
+                    finally:
+                        # 🚨 연산 완료/예외 발생 무관하게 즉시 대기열 자격을 밀어주고 뒤 차례 대기자로 넘김
+                        queue_manager.release_turn(session_id)
+                        st.rerun()
+                        
+        # 세션 기반으로 보고서 내용과 다운로드 버튼 안전 렌더링 (Rerun 후 유실 차단)
+        if st.session_state.temp_report:
+            ref_docs = st.session_state.temp_report_ref_docs
+            if ref_docs and any(doc.metadata.get('source') for doc in ref_docs):
+                st.info("🔍 **[구글 클라우드 RAG 모드 검증]** 분석에 교육과정 표준이 매핑되었습니다.")
+            else:
+                st.info("💡 **[Gemma-4 단독 모드]** 모델 내부의 초등 학업 성취 평가 노하우를 바탕으로 결과를 종합했습니다.")
+                
+            st.markdown(st.session_state.temp_report)
+            
+            col_dl1, col_dl2 = st.columns([1, 1])
+            with col_dl1:
+                st.download_button(
+                    label="📥 결과 보고서(.md) 다운로드",
+                    data=st.session_state.temp_report,
+                    file_name=f"수업결과보고_{rep_title.replace(' ', '_')}.md" if rep_title else "수업결과보고.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            with col_dl2:
+                try:
+                    pdf_data = markdown_to_pdf_bytes(st.session_state.temp_report, title=f"수업결과보고: {rep_title}" if rep_title else "수업결과보고")
+                    st.download_button(
+                        label="📥 PDF 파일(.pdf) 다운로드",
+                        data=pdf_data,
+                        file_name=f"수업결과보고_{rep_title.replace(' ', '_')}.pdf" if rep_title else "수업결과보고.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                except Exception as pdf_err:
+                    st.warning(f"PDF 생성 실패: {pdf_err}")
+            
+            if ref_docs:
+                with st.expander("🔍 클라우드 인용 대조 (RAG 출처)"):
+                    for idx, doc in enumerate(ref_docs):
+                        st.markdown(f"**[{idx+1}] {os.path.basename(doc.metadata.get('source', '알수없음'))} (Page {doc.metadata.get('page', 0)+1})**")
+                        st.caption(doc.page_content[:300] + "...")
         else:
             st.info("왼쪽 수업 실적란을 채워 제출하면, 학무 양식에 맞춘 풍성한 결과 평가서가 이곳에 채워집니다.")
 
