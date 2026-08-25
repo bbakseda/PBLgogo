@@ -15,7 +15,10 @@ class RAGChainManager:
         local_connected = False
         target_ollama_host = ollama_host
         
-        if MY_LOCAL_OLLAMA_URL:
+        # 🚨 로컬 윈도우 환경(os.name == 'nt')인 경우에는 불필요한 외부 터널(localtunnel.me) 루프백을 생략하고 127.0.0.1로 즉시 직결
+        is_windows = (os.name == 'nt')
+        
+        if MY_LOCAL_OLLAMA_URL and not is_windows:
             try:
                 ping_url = f"{MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags"
                 res = requests.get(ping_url, timeout=2.0)
