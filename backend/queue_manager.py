@@ -1,15 +1,20 @@
 import time
 import random
 import threading
-import os
 
 class GlobalQueueManager:
+    # 🚨 Streamlit의 캐시 초기화 및 인스턴스 재성성 시에도 데이터를 100% 영구 보존하는 클래스 레벨 전역 메모리락
+    _global_lock = threading.Lock()
+    _global_queue = []
+    _global_user_names = {}
+    _global_last_heartbeat = {}
+    _global_active_user = None
+
     def __init__(self):
-        self.lock = threading.Lock()
-        self.queue = []           # 대기 중인 세션 ID 목록: [session_id1, session_id2, ...]
-        self.user_names = {}      # 세션 ID별 매핑된 닉네임: {session_id: "동물명"}
-        self.last_heartbeat = {}  # 세션 ID별 최종 활성 시간: {session_id: timestamp}
-        self.active_user = None   # 현재 연산을 독점하여 수행 중인 세션 ID
+        self.lock = self.__class__._global_lock
+        self.queue = self.__class__._global_queue
+        self.user_names = self.__class__._global_user_names
+        self.last_heartbeat = self.__class__._global_last_heartbeat
         
         # 한국의 귀여운 천연기념물 및 야생동물 이름 닉네임 리스트
         self.available_names = [
@@ -19,6 +24,14 @@ class GlobalQueueManager:
             '쇠제비갈매기', '원앙', '산양', '멧토끼', '다람쥐', '고슴도치', 
             '두더지', '청개구리', '금개구리', '맹꽁이', '까치', '물새', '멧돼지'
         ]
+
+    @property
+    def active_user(self):
+        return self.__class__._global_active_user
+
+    @active_user.setter
+    def active_user(self, value):
+        self.__class__._global_active_user = value
 
     def register_user(self, session_id):
         """세션 ID가 처음 접속했을 때 닉네임을 부여하고 대기열에 등록합니다."""
