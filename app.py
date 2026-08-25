@@ -16,6 +16,14 @@ import locale
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["LANG"] = "en_US.UTF-8"
 os.environ["LC_ALL"] = "en_US.UTF-8"
+
+# 🚨 httpx / httpcore의 윈도우 프록시 자동 감지 버그(WinError 10049) 방지를 위해 관련 환경변수 강제 비우기
+os.environ["HTTP_PROXY"] = ""
+os.environ["HTTPS_PROXY"] = ""
+os.environ["http_proxy"] = ""
+os.environ["https_proxy"] = ""
+os.environ["NO_PROXY"] = "localhost,127.0.0.1"
+os.environ["no_proxy"] = "localhost,127.0.0.1"
 try:
     locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 except:
