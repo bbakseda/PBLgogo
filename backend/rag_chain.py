@@ -7,6 +7,10 @@ from config import GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL
 
 class RAGChainManager:
     def __init__(self, ollama_host, model_name, vector_store=None):
+        # 🚨 OLLAMA 주소가 localhost인 경우 윈도우 IPv6 소켓 오류(WinError 10049) 방지를 위해 127.0.0.1로 강제 보정
+        if "localhost" in ollama_host:
+            ollama_host = ollama_host.replace("localhost", "127.0.0.1")
+            
         # 1. 교사님의 로컬 PC Ollama 원격 개방 연결 상태 확인
         local_connected = False
         target_ollama_host = ollama_host
