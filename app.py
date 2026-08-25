@@ -139,7 +139,15 @@ if "vector_manager" not in st.session_state:
     # 4단계: 하이브리드 RAG 체인 오케스트레이션 (95%)
     init_status.info("⏳ [4/4] 로컬/클라우드 하이브리드 RAG 교수 설계 체인을 활성화하는 중... (95%)")
     init_progress.progress(0.95)
-    st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
+    
+    # 🚨 OLLAMA_HOST 강제 자가정화 (Secrets 설정 오염 및 윈도우 WinError 10049 소켓 충돌 방지)
+    clean_ollama_host = OLLAMA_HOST
+    if "localhost" in clean_ollama_host:
+        clean_ollama_host = clean_ollama_host.replace("localhost", "127.0.0.1")
+    if os.name == 'nt':
+        clean_ollama_host = "http://127.0.0.1:11434"
+        
+    st.session_state.rag_manager = RAGChainManager(clean_ollama_host, OLLAMA_MODEL, vs)
     
     # 완료 (100% 및 청소)
     init_status.success("✅ 교사용 RAG AI 비서 엔진 로딩 완료! (100%)")
