@@ -546,6 +546,10 @@ with st.sidebar:
                 st.markdown(f"**{idx+1}. {name}(나)**")
             else:
                 st.markdown(f"{idx+1}. {name}")
+                
+    # 🚨 실시간 대기열 자동 동기화 (3초마다 자동 Rerun하여 다중 접속자 입장/탈퇴 상황 실시간 강제 동기화)
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=3000, limit=2000, key="queue_auto_refresh")
 
 # 탭 구성 (관리자 모드 여부에 따라 분기)
 if st.session_state.is_admin:
