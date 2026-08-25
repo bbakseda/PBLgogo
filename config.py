@@ -30,7 +30,7 @@ def get_config_val(key, default=""):
     return os.getenv(key, default)
 
 # Ollama 설정
-OLLAMA_HOST = get_config_val("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_HOST = get_config_val("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = get_config_val("OLLAMA_MODEL", "gemma4:e4b")
 
 # Google Cloud Storage 설정
