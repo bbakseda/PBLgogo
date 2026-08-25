@@ -530,26 +530,30 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🦄 교사용 AI 대기열 현황")
     
-    # 실시간 대기열 상태 데이터 획득
-    queue_status = queue_manager.get_queue_status(session_id)
-    st.markdown(f"- 🏷️ **나의 닉네임:** `{queue_status['my_name']}(나)`")
-    
-    if queue_status['is_my_turn']:
-        st.success("🟢 **지금 생성하실 수 있습니다!**")
-    else:
-        st.warning(f"⏳ **대기 중:** `내 순서: {queue_status['my_turn']}번째` (현재 집필 중: `{queue_status['active_user_name']}`)")
+    # 🚨 CPU 과부하 및 Throttling(제한)을 방지하기 위해 대기열 패널만 st.fragment로 부분 격리하여 실시간 자동 갱신 수행
+    @st.fragment
+    def render_realtime_queue():
+        queue_status = queue_manager.get_queue_status(session_id)
+        st.markdown(f"- 🏷️ **나의 닉네임:** `{queue_status['my_name']}(나)`")
         
-    # 대기열 목록 표시
-    with st.expander(f"📋 대기열 목록 ({queue_status['total_waiting']}명)"):
-        for idx, name in enumerate(queue_status['queue_list']):
-            if name == queue_status['my_name']:
-                st.markdown(f"**{idx+1}. {name}(나)**")
-            else:
-                st.markdown(f"{idx+1}. {name}")
-                
-    # 🚨 실시간 대기열 자동 동기화 (3초마다 자동 Rerun하여 다중 접속자 입장/탈퇴 상황 실시간 강제 동기화)
-    from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=3000, limit=2000, key="queue_auto_refresh")
+        if queue_status['is_my_turn']:
+            st.success("🟢 **지금 생성하실 수 있습니다!**")
+        else:
+            st.warning(f"⏳ **대기 중:** `내 순서: {queue_status['my_turn']}번째` (현재 집필 중: `{queue_status['active_user_name']}`)")
+            
+        with st.expander(f"📋 대기열 목록 ({queue_status['total_waiting']}명)"):
+            for idx, name in enumerate(queue_status['queue_list']):
+                if name == queue_status['my_name']:
+                    st.markdown(f"**{idx+1}. {name}(나)**")
+                else:
+                    st.markdown(f"{idx+1}. {name}")
+                    
+        # 🚨 전체 스크립트를 Rerun하지 않고, 오직 대기열 패널만 10초 주기로 백그라운드 갱신하여 서버 자원 극도 절약
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=10000, limit=1000, key="queue_auto_refresh_fragment")
+        
+    # 격리 렌더러 호출
+    render_realtime_queue()
 
 # 탭 구성 (관리자 모드 여부에 따라 분기)
 if st.session_state.is_admin:
