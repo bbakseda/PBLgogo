@@ -666,9 +666,10 @@ with tab1:
                         import traceback
                         st.error(f"생성 실패: {e}\n\n{traceback.format_exc()}")
                     finally:
-                        # 🚨 연산 완료/예외 발생 무관하게 즉시 대기열 자격을 밀어주고 뒤 차례 대기자로 넘김
-                        queue_manager.release_turn(session_id)
-                        st.rerun()
+                        # 🚨 생성에 성공한 경우에만 대기열 권한을 다음 사람에게 넘기고 Rerun을 수행 (에러 로그 유실 방지)
+                        if st.session_state.temp_plan:
+                            queue_manager.release_turn(session_id)
+                            st.rerun()
 
         # Y축 겹침/증발 없는 세션 데이터 기반 렌더링
         if st.session_state.temp_plan:
@@ -808,9 +809,10 @@ with tab2:
                     except Exception as e:
                         st.error(f"작성 실패: {e}")
                     finally:
-                        # 🚨 연산 완료/예외 발생 무관하게 즉시 대기열 자격을 밀어주고 뒤 차례 대기자로 넘김
-                        queue_manager.release_turn(session_id)
-                        st.rerun()
+                        # 🚨 생성에 성공한 경우에만 대기열 권한을 다음 사람에게 넘기고 Rerun을 수행 (에러 로그 유실 방지)
+                        if st.session_state.temp_report:
+                            queue_manager.release_turn(session_id)
+                            st.rerun()
                         
         # 세션 기반으로 보고서 내용과 다운로드 버튼 안전 렌더링 (Rerun 후 유실 차단)
         if st.session_state.temp_report:
