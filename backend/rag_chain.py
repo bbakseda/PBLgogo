@@ -79,6 +79,7 @@ class RAGChainManager:
                 search_type="similarity",
                 search_kwargs={"k": 7}
             )
+        self.gemini_api_key = gemini_api_key
 
     def set_vector_store(self, vector_store):
         self.vector_store = vector_store
@@ -144,15 +145,45 @@ class RAGChainManager:
         ])
         
         chain = prompt_tmpl | self.llm | StrOutputParser()
-        response = chain.invoke({
-            "context": context,
-            "project_title": project_title,
-            "learning_goals": learning_goals,
-            "duration": duration,
-            "level": level,
-            "model_type": model_type,
-            "additional_requirements": additional_requirements
-        })
+        try:
+            response = chain.invoke({
+                "context": context,
+                "project_title": project_title,
+                "learning_goals": learning_goals,
+                "duration": duration,
+                "level": level,
+                "model_type": model_type,
+                "additional_requirements": additional_requirements
+            })
+        except Exception as local_err:
+            # 🚨 로컬 Ollama 연산 실패 시(Connection refused, 111 에러 등), 구글 Gemini로 실시간 자동 강제 우회 작동!
+            if self.gemini_api_key:
+                try:
+                    print(f"Local LLM execution failed ({local_err}). Falling back to Google Gemini...")
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+                    fallback_llm = ChatGoogleGenerativeAI(
+                        model="gemini-1.5-flash",
+                        api_key=self.gemini_api_key,
+                        temperature=0.4,
+                        client_options={"api_version": "v1"}
+                    )
+                    fallback_chain = prompt_tmpl | fallback_llm | StrOutputParser()
+                    response = fallback_chain.invoke({
+                        "context": context,
+                        "project_title": project_title,
+                        "learning_goals": learning_goals,
+                        "duration": duration,
+                        "level": level,
+                        "model_type": model_type,
+                        "additional_requirements": additional_requirements
+                    })
+                    # 임시 엔진 정보 업데이트
+                    self.is_gemini_active = True
+                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
+                except Exception as gemini_err:
+                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+            else:
+                raise local_err
         return response, docs
 
     def generate_report(self, project_title, implementations, troubleshooting, outcomes, additional_requirements):
@@ -195,14 +226,41 @@ class RAGChainManager:
         ])
         
         chain = prompt_tmpl | self.llm | StrOutputParser()
-        response = chain.invoke({
-            "context": context,
-            "project_title": project_title,
-            "implementations": implementations,
-            "troubleshooting": troubleshooting,
-            "outcomes": outcomes,
-            "additional_requirements": additional_requirements
-        })
+        try:
+            response = chain.invoke({
+                "context": context,
+                "project_title": project_title,
+                "implementations": implementations,
+                "troubleshooting": troubleshooting,
+                "outcomes": outcomes,
+                "additional_requirements": additional_requirements
+            })
+        except Exception as local_err:
+            if self.gemini_api_key:
+                try:
+                    print(f"Local LLM failed for report ({local_err}). Falling back to Gemini...")
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+                    fallback_llm = ChatGoogleGenerativeAI(
+                        model="gemini-1.5-flash",
+                        api_key=self.gemini_api_key,
+                        temperature=0.4,
+                        client_options={"api_version": "v1"}
+                    )
+                    fallback_chain = prompt_tmpl | fallback_llm | StrOutputParser()
+                    response = fallback_chain.invoke({
+                        "context": context,
+                        "project_title": project_title,
+                        "implementations": implementations,
+                        "troubleshooting": troubleshooting,
+                        "outcomes": outcomes,
+                        "additional_requirements": additional_requirements
+                    })
+                    self.is_gemini_active = True
+                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
+                except Exception as gemini_err:
+                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+            else:
+                raise local_err
         return response, docs
 
     def answer_question(self, question):
@@ -231,10 +289,33 @@ class RAGChainManager:
         ])
         
         chain = prompt_tmpl | self.llm | StrOutputParser()
-        response = chain.invoke({
-            "context": context,
-            "question": question
-        })
+        try:
+            response = chain.invoke({
+                "context": context,
+                "question": question
+            })
+        except Exception as local_err:
+            if self.gemini_api_key:
+                try:
+                    print(f"Local LLM failed for QA ({local_err}). Falling back to Gemini...")
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+                    fallback_llm = ChatGoogleGenerativeAI(
+                        model="gemini-1.5-flash",
+                        api_key=self.gemini_api_key,
+                        temperature=0.4,
+                        client_options={"api_version": "v1"}
+                    )
+                    fallback_chain = prompt_tmpl | fallback_llm | StrOutputParser()
+                    response = fallback_chain.invoke({
+                        "context": context,
+                        "question": question
+                    })
+                    self.is_gemini_active = True
+                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
+                except Exception as gemini_err:
+                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+            else:
+                raise local_err
         return response, docs
 
     def generate_simulated_report(self, project_title, learning_goals, plan_content, level, model_type):
@@ -277,11 +358,37 @@ class RAGChainManager:
         ])
         
         chain = prompt_tmpl | self.llm | StrOutputParser()
-        response = chain.invoke({
-            "context": context,
-            "project_title": project_title,
-            "level": level,
-            "model_type": model_type,
-            "plan_content": plan_content
-        })
+        try:
+            response = chain.invoke({
+                "context": context,
+                "project_title": project_title,
+                "level": level,
+                "model_type": model_type,
+                "plan_content": plan_content
+            })
+        except Exception as local_err:
+            if self.gemini_api_key:
+                try:
+                    print(f"Local LLM failed for simulated report ({local_err}). Falling back to Gemini...")
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+                    fallback_llm = ChatGoogleGenerativeAI(
+                        model="gemini-1.5-flash",
+                        api_key=self.gemini_api_key,
+                        temperature=0.4,
+                        client_options={"api_version": "v1"}
+                    )
+                    fallback_chain = prompt_tmpl | fallback_llm | StrOutputParser()
+                    response = fallback_chain.invoke({
+                        "context": context,
+                        "project_title": project_title,
+                        "level": level,
+                        "model_type": model_type,
+                        "plan_content": plan_content
+                    })
+                    self.is_gemini_active = True
+                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
+                except Exception as gemini_err:
+                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+            else:
+                raise local_err
         return response
