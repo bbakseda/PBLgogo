@@ -44,11 +44,9 @@ class RAGChainManager:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",
+                    model="models/gemini-1.5-flash",
                     api_key=config.GEMINI_API_KEY,
-                    temperature=0.4,
-                    max_output_tokens=8192,
-                    generation_config={"max_output_tokens": 8192}
+                    temperature=0.4
                 )
                 self.is_gemini_active = True
                 self.connected_engine_info = "구글 Gemini 클라우드 엔진"
