@@ -3,7 +3,7 @@ import requests
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from config import GEMINI_API_KEY, MY_LOCAL_OLLAMA_URL
+import config
 
 class RAGChainManager:
     def __init__(self, ollama_host, model_name, vector_store=None):
@@ -18,9 +18,9 @@ class RAGChainManager:
         # 🚨 로컬 윈도우 환경(os.name == 'nt')인 경우에는 불필요한 외부 터널(localtunnel.me) 루프백을 생략하고 127.0.0.1로 즉시 직결
         is_windows = (os.name == 'nt')
         
-        if MY_LOCAL_OLLAMA_URL and not is_windows:
+        if config.MY_LOCAL_OLLAMA_URL and not is_windows:
             try:
-                ping_url = f"{MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags"
+                ping_url = f"{config.MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags"
                 res = requests.get(ping_url, timeout=2.0)
                 if res.status_code == 200:
                     local_connected = True
@@ -40,12 +40,12 @@ class RAGChainManager:
             )
             self.is_gemini_active = False
             self.connected_engine_info = "로컬 AI 컴퓨터 (gemma4)"
-        elif GEMINI_API_KEY:
+        elif config.GEMINI_API_KEY:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 self.llm = ChatGoogleGenerativeAI(
                     model="gemini-1.5-flash",
-                    api_key=GEMINI_API_KEY,
+                    api_key=config.GEMINI_API_KEY,
                     temperature=0.4,
                     max_output_tokens=8192,
                     generation_config={"max_output_tokens": 8192}

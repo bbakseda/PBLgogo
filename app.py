@@ -357,6 +357,31 @@ with st.sidebar:
             st.info("💻 **로컬 전용 모드**\n- 원격 동기화 없이 로컬 캐시 데이터로만 작동합니다.")
             
         st.markdown("---")
+        st.markdown("### 🔑 Gemini API Key 설정")
+        st.caption("교사님 PC가 꺼져 있을 때 백업 작동할 구글 클라우드 Gemini API 키를 관리합니다.")
+        
+        import config
+        # 현재 동적 로딩된 API 키 노출
+        gemini_key_input = st.text_input(
+            "Gemini API Key",
+            value=config.GEMINI_API_KEY,
+            type="password",
+            help="구글 AI 스튜디오에서 발급받은 API 키를 입력하세요."
+        )
+        
+        if st.button("💾 Gemini API Key 적용 및 저장", key="save_gemini_key_btn", use_container_width=True):
+            try:
+                config.set_dynamic_config("GEMINI_API_KEY", gemini_key_input)
+                # 즉각 런타임 RAG 매니저 재생성하여 새 키 바인딩
+                vs = st.session_state.vector_manager.load_vector_store()
+                from backend.rag_chain import RAGChainManager
+                st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
+                st.success("🎉 Gemini API Key가 성공적으로 업데이트 및 영구 저장되었습니다!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"API Key 반영 실패: {e}")
+                
+        st.markdown("---")
         st.markdown("### 📥 교육 자료 동기화")
         st.caption("원격지 저장소에 보관한 최신 문서를 다운로드하거나 빌드된 벡터 데이터베이스를 바로 로딩합니다.")
         
