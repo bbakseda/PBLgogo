@@ -165,7 +165,8 @@ if "vector_manager" not in st.session_state:
     if os.name == 'nt':
         clean_ollama_host = "http://127.0.0.1:11434"
         
-    st.session_state.rag_manager = RAGChainManager(clean_ollama_host, OLLAMA_MODEL, vs)
+    import config
+    st.session_state.rag_manager = RAGChainManager(clean_ollama_host, OLLAMA_MODEL, vs, gemini_api_key=config.GEMINI_API_KEY)
     
     # 완료 (100% 및 청소)
     init_status.success("✅ 교사용 RAG AI 비서 엔진 로딩 완료! (100%)")
@@ -375,7 +376,7 @@ with st.sidebar:
                 # 즉각 런타임 RAG 매니저 재생성하여 새 키 바인딩
                 vs = st.session_state.vector_manager.load_vector_store()
                 from backend.rag_chain import RAGChainManager
-                st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs)
+                st.session_state.rag_manager = RAGChainManager(OLLAMA_HOST, OLLAMA_MODEL, vs, gemini_api_key=gemini_key_input)
                 st.success("🎉 Gemini API Key가 성공적으로 업데이트 및 영구 저장되었습니다!")
                 st.rerun()
             except Exception as e:

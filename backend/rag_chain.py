@@ -6,7 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 import config
 
 class RAGChainManager:
-    def __init__(self, ollama_host, model_name, vector_store=None):
+    def __init__(self, ollama_host, model_name, vector_store=None, gemini_api_key=None):
         # 🚨 OLLAMA 주소가 localhost인 경우 윈도우 IPv6 소켓 오류(WinError 10049) 방지를 위해 127.0.0.1로 강제 보정
         if "localhost" in ollama_host:
             ollama_host = ollama_host.replace("localhost", "127.0.0.1")
@@ -40,12 +40,12 @@ class RAGChainManager:
             )
             self.is_gemini_active = False
             self.connected_engine_info = "로컬 AI 컴퓨터 (gemma4)"
-        elif config.GEMINI_API_KEY:
+        elif gemini_api_key:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 self.llm = ChatGoogleGenerativeAI(
                     model="gemini-1.5-flash",
-                    api_key=config.GEMINI_API_KEY,
+                    api_key=gemini_api_key,
                     temperature=0.4
                 )
                 self.is_gemini_active = True
