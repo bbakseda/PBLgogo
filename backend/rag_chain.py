@@ -46,7 +46,8 @@ class RAGChainManager:
                 self.llm = ChatGoogleGenerativeAI(
                     model="gemini-1.5-flash",
                     api_key=gemini_api_key,
-                    temperature=0.4
+                    temperature=0.4,
+                    client_options={"api_version": "v1"}
                 )
                 self.is_gemini_active = True
                 self.connected_engine_info = "구글 Gemini 클라우드 엔진"
