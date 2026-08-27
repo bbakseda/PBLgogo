@@ -157,10 +157,11 @@ class RAGChainManager:
                 "additional_requirements": additional_requirements
             })
         except Exception as local_err:
-            # 🚨 로컬 Ollama 연산 실패 시(Connection refused, 111 에러 등), 구글 Gemini로 실시간 자동 강제 우회 작동!
+            # 🚨 로컬 연산 실패 시, 구글 Gemini로 실시간 자동 강제 우회 작동!
             if self.gemini_api_key:
+                # [2단계] Gemini 3.7 Flash 기동
                 try:
-                    print(f"Local LLM execution failed ({local_err}). Falling back to Google Gemini...")
+                    print(f"Local LLM execution failed ({local_err}). Falling back to Gemini 3.7 Flash...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
                         model="gemini-3.7-flash",
@@ -177,11 +178,34 @@ class RAGChainManager:
                         "model_type": model_type,
                         "additional_requirements": additional_requirements
                     })
-                    # 임시 엔진 정보 업데이트
                     self.is_gemini_active = True
-                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
-                except Exception as gemini_err:
-                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+                    self.connected_engine_info = "구글 Gemini 3.7 클라우드 엔진"
+                except Exception as gemini_37_err:
+                    # [3단계] 3.7 세대 503 일시적 혼잡 시, 안전한 gemini-1.5-flash-latest 로 백업 기동!
+                    try:
+                        print(f"Gemini 3.7 failed ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
+                        from langchain_google_genai import ChatGoogleGenerativeAI
+                        fallback_llm_15 = ChatGoogleGenerativeAI(
+                            model="gemini-1.5-flash-latest",
+                            api_key=self.gemini_api_key,
+                            temperature=0.4
+                        )
+                        fallback_chain_15 = prompt_tmpl | fallback_llm_15 | StrOutputParser()
+                        import time
+                        time.sleep(2.0) # 503 완화를 위해 2초간 쿨다운 대기 후 호출
+                        response = fallback_chain_15.invoke({
+                            "context": context,
+                            "project_title": project_title,
+                            "learning_goals": learning_goals,
+                            "duration": duration,
+                            "level": level,
+                            "model_type": model_type,
+                            "additional_requirements": additional_requirements
+                        })
+                        self.is_gemini_active = True
+                        self.connected_engine_info = "구글 Gemini 1.5 백업 클라우드"
+                    except Exception as gemini_15_err:
+                        raise Exception(f"모든 AI 엔진이 가동 거절되었습니다.\n1) 로컬: {local_err}\n2) Gemini 3.7: {gemini_37_err}\n3) Gemini 1.5 백업: {gemini_15_err}")
             else:
                 raise local_err
         return response, docs
@@ -237,8 +261,9 @@ class RAGChainManager:
             })
         except Exception as local_err:
             if self.gemini_api_key:
+                # [2단계] Gemini 3.7 Flash 기동
                 try:
-                    print(f"Local LLM failed for report ({local_err}). Falling back to Gemini...")
+                    print(f"Local LLM failed for report ({local_err}). Falling back to Gemini 3.7 Flash...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
                         model="gemini-3.7-flash",
@@ -255,9 +280,32 @@ class RAGChainManager:
                         "additional_requirements": additional_requirements
                     })
                     self.is_gemini_active = True
-                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
-                except Exception as gemini_err:
-                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+                    self.connected_engine_info = "구글 Gemini 3.7 클라우드 엔진"
+                except Exception as gemini_37_err:
+                    # [3단계] Gemini 3.7 Flash 503 일시 혼잡 시, gemini-1.5-flash-latest 백업 기동!
+                    try:
+                        print(f"Gemini 3.7 failed for report ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
+                        from langchain_google_genai import ChatGoogleGenerativeAI
+                        fallback_llm_15 = ChatGoogleGenerativeAI(
+                            model="gemini-1.5-flash-latest",
+                            api_key=self.gemini_api_key,
+                            temperature=0.4
+                        )
+                        fallback_chain_15 = prompt_tmpl | fallback_llm_15 | StrOutputParser()
+                        import time
+                        time.sleep(2.0)
+                        response = fallback_chain_15.invoke({
+                            "context": context,
+                            "project_title": project_title,
+                            "implementations": implementations,
+                            "troubleshooting": troubleshooting,
+                            "outcomes": outcomes,
+                            "additional_requirements": additional_requirements
+                        })
+                        self.is_gemini_active = True
+                        self.connected_engine_info = "구글 Gemini 1.5 백업 클라우드"
+                    except Exception as gemini_15_err:
+                        raise Exception(f"모든 AI 엔진이 가동 거절되었습니다.\n1) 로컬: {local_err}\n2) Gemini 3.7: {gemini_37_err}\n3) Gemini 1.5 백업: {gemini_15_err}")
             else:
                 raise local_err
         return response, docs
@@ -295,8 +343,9 @@ class RAGChainManager:
             })
         except Exception as local_err:
             if self.gemini_api_key:
+                # [2단계] Gemini 3.7 Flash 기동
                 try:
-                    print(f"Local LLM failed for QA ({local_err}). Falling back to Gemini...")
+                    print(f"Local LLM failed for QA ({local_err}). Falling back to Gemini 3.7 Flash...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
                         model="gemini-3.7-flash",
@@ -309,9 +358,28 @@ class RAGChainManager:
                         "question": question
                     })
                     self.is_gemini_active = True
-                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
-                except Exception as gemini_err:
-                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+                    self.connected_engine_info = "구글 Gemini 3.7 클라우드 엔진"
+                except Exception as gemini_37_err:
+                    # [3단계] Gemini 3.7 503 일시 혼잡 시, gemini-1.5-flash-latest 백업 기동!
+                    try:
+                        print(f"Gemini 3.7 failed for QA ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
+                        from langchain_google_genai import ChatGoogleGenerativeAI
+                        fallback_llm_15 = ChatGoogleGenerativeAI(
+                            model="gemini-1.5-flash-latest",
+                            api_key=self.gemini_api_key,
+                            temperature=0.4
+                        )
+                        fallback_chain_15 = prompt_tmpl | fallback_llm_15 | StrOutputParser()
+                        import time
+                        time.sleep(2.0)
+                        response = fallback_chain_15.invoke({
+                            "context": context,
+                            "question": question
+                        })
+                        self.is_gemini_active = True
+                        self.connected_engine_info = "구글 Gemini 1.5 백업 클라우드"
+                    except Exception as gemini_15_err:
+                        raise Exception(f"모든 AI 엔진이 가동 거절되었습니다.\n1) 로컬: {local_err}\n2) Gemini 3.7: {gemini_37_err}\n3) Gemini 1.5 백업: {gemini_15_err}")
             else:
                 raise local_err
         return response, docs
@@ -366,8 +434,9 @@ class RAGChainManager:
             })
         except Exception as local_err:
             if self.gemini_api_key:
+                # [2단계] Gemini 3.7 Flash 기동
                 try:
-                    print(f"Local LLM failed for simulated report ({local_err}). Falling back to Gemini...")
+                    print(f"Local LLM failed for simulated report ({local_err}). Falling back to Gemini 3.7 Flash...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
                         model="gemini-3.7-flash",
@@ -383,9 +452,31 @@ class RAGChainManager:
                         "plan_content": plan_content
                     })
                     self.is_gemini_active = True
-                    self.connected_engine_info = "구글 Gemini 클라우드 엔진 (자동 폴백)"
-                except Exception as gemini_err:
-                    raise Exception(f"양대 AI 엔진 모두 가동 실패.\n1) 로컬: {local_err}\n2) Gemini: {gemini_err}")
+                    self.connected_engine_info = "구글 Gemini 3.7 클라우드 엔진"
+                except Exception as gemini_37_err:
+                    # [3단계] Gemini 3.7 503 일시 혼잡 시, gemini-1.5-flash-latest 백업 기동!
+                    try:
+                        print(f"Gemini 3.7 failed for simulated report ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
+                        from langchain_google_genai import ChatGoogleGenerativeAI
+                        fallback_llm_15 = ChatGoogleGenerativeAI(
+                            model="gemini-1.5-flash-latest",
+                            api_key=self.gemini_api_key,
+                            temperature=0.4
+                        )
+                        fallback_chain_15 = prompt_tmpl | fallback_llm_15 | StrOutputParser()
+                        import time
+                        time.sleep(2.0)
+                        response = fallback_chain_15.invoke({
+                            "context": context,
+                            "project_title": project_title,
+                            "level": level,
+                            "model_type": model_type,
+                            "plan_content": plan_content
+                        })
+                        self.is_gemini_active = True
+                        self.connected_engine_info = "구글 Gemini 1.5 백업 클라우드"
+                    except Exception as gemini_15_err:
+                        raise Exception(f"모든 AI 엔진이 가동 거절되었습니다.\n1) 로컬: {local_err}\n2) Gemini 3.7: {gemini_37_err}\n3) Gemini 1.5 백업: {gemini_15_err}")
             else:
                 raise local_err
         return response
