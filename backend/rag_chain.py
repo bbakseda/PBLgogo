@@ -23,9 +23,11 @@ class RAGChainManager:
                 ping_url = f"{config.MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags"
                 res = requests.get(ping_url, timeout=2.0)
                 if res.status_code == 200:
-                    local_connected = True
-                    target_ollama_host = MY_LOCAL_OLLAMA_URL
-                    print(f"Successfully connected to Remote Local PC Ollama at: {MY_LOCAL_OLLAMA_URL}")
+                    data = res.json()
+                    if isinstance(data, dict) and "models" in data:
+                        local_connected = True
+                        target_ollama_host = config.MY_LOCAL_OLLAMA_URL
+                        print(f"Successfully connected to Remote Local PC Ollama at: {config.MY_LOCAL_OLLAMA_URL}")
             except Exception as e:
                 print(f"Remote Local PC Ollama is offline: {e}")
                 

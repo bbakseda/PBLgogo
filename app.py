@@ -277,10 +277,12 @@ st.markdown("<div class='subtitle'>구글 클라우드 RAG 연동 및 Gemma-4 �
 # 시스템 상태 체크
 ollama_connected = False
 try:
-    # 1. 로컬 기본 Ollama 핑
+    # 1. 로컬 기본 Ollama 핑 (본문이 정상 JSON이고 models 키가 들어있는지 검증하여 localtunnel 가짜 페이지 우회)
     res = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
     if res.status_code == 200:
-        ollama_connected = True
+        data = res.json()
+        if isinstance(data, dict) and "models" in data:
+            ollama_connected = True
 except:
     pass
 
@@ -289,7 +291,9 @@ if not ollama_connected and MY_LOCAL_OLLAMA_URL:
     try:
         res = requests.get(f"{MY_LOCAL_OLLAMA_URL.rstrip('/')}/api/tags", timeout=2)
         if res.status_code == 200:
-            ollama_connected = True
+            data = res.json()
+            if isinstance(data, dict) and "models" in data:
+                ollama_connected = True
     except:
         pass
 
