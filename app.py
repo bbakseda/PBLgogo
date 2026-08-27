@@ -276,9 +276,17 @@ st.markdown("<div class='subtitle'>구글 클라우드 RAG 연동 및 Gemma-4 �
 
 # 시스템 상태 체크
 ollama_connected = False
+
+# 🚨 OLLAMA_HOST 안전 보정 (윈도우 IPv6 소켓 충돌 방지를 위해 127.0.0.1로 자가 환원)
+target_ping_host = OLLAMA_HOST
+if "localhost" in target_ping_host:
+    target_ping_host = target_ping_host.replace("localhost", "127.0.0.1")
+if os.name == 'nt':
+    target_ping_host = "http://127.0.0.1:11434"
+
 try:
-    # 1. 로컬 기본 Ollama 핑 (본문이 정상 JSON이고 models 키가 들어있는지 검증하여 localtunnel 가짜 페이지 우회)
-    res = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
+    # 1. 로컬 기본 Ollama 핑 (보정된 호스트 사용)
+    res = requests.get(f"{target_ping_host}/api/tags", timeout=2)
     if res.status_code == 200:
         data = res.json()
         if isinstance(data, dict) and "models" in data:
