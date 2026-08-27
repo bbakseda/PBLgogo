@@ -561,7 +561,6 @@ with st.sidebar:
     st.markdown("### 🦄 교사용 AI 대기열 현황")
     
     # 🚨 CPU 과부하 및 Throttling(제한)을 방지하기 위해 대기열 패널만 st.fragment로 부분 격리하여 실시간 자동 갱신 수행
-    @st.fragment
     def render_realtime_queue():
         queue_status = queue_manager.get_queue_status(session_id)
         st.markdown(f"- 🏷️ **나의 닉네임:** `{queue_status['my_name']}(나)`")
