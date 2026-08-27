@@ -186,7 +186,7 @@ class RAGChainManager:
                         print(f"Gemini 3.7 failed ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
                         from langchain_google_genai import ChatGoogleGenerativeAI
                         fallback_llm_15 = ChatGoogleGenerativeAI(
-                            model="gemini-1.5-flash-latest",
+                            model="gemini-1.5-flash",
                             api_key=self.gemini_api_key,
                             temperature=0.4
                         )
@@ -287,7 +287,7 @@ class RAGChainManager:
                         print(f"Gemini 3.7 failed for report ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
                         from langchain_google_genai import ChatGoogleGenerativeAI
                         fallback_llm_15 = ChatGoogleGenerativeAI(
-                            model="gemini-1.5-flash-latest",
+                            model="gemini-1.5-flash",
                             api_key=self.gemini_api_key,
                             temperature=0.4
                         )
@@ -365,7 +365,7 @@ class RAGChainManager:
                         print(f"Gemini 3.7 failed for QA ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
                         from langchain_google_genai import ChatGoogleGenerativeAI
                         fallback_llm_15 = ChatGoogleGenerativeAI(
-                            model="gemini-1.5-flash-latest",
+                            model="gemini-1.5-flash",
                             api_key=self.gemini_api_key,
                             temperature=0.4
                         )
@@ -459,7 +459,7 @@ class RAGChainManager:
                         print(f"Gemini 3.7 failed for simulated report ({gemini_37_err}). Falling back to Gemini 1.5 Flash Latest...")
                         from langchain_google_genai import ChatGoogleGenerativeAI
                         fallback_llm_15 = ChatGoogleGenerativeAI(
-                            model="gemini-1.5-flash-latest",
+                            model="gemini-1.5-flash",
                             api_key=self.gemini_api_key,
                             temperature=0.4
                         )
