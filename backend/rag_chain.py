@@ -46,7 +46,7 @@ class RAGChainManager:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",
+                    model="gemini-3.7-flash",
                     api_key=gemini_api_key,
                     temperature=0.4
                 )
@@ -163,7 +163,7 @@ class RAGChainManager:
                     print(f"Local LLM execution failed ({local_err}). Falling back to Google Gemini...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
-                        model="gemini-1.5-flash",
+                        model="gemini-3.7-flash",
                         api_key=self.gemini_api_key,
                         temperature=0.4
                     )
@@ -241,7 +241,7 @@ class RAGChainManager:
                     print(f"Local LLM failed for report ({local_err}). Falling back to Gemini...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
-                        model="gemini-1.5-flash",
+                        model="gemini-3.7-flash",
                         api_key=self.gemini_api_key,
                         temperature=0.4
                     )
@@ -299,7 +299,7 @@ class RAGChainManager:
                     print(f"Local LLM failed for QA ({local_err}). Falling back to Gemini...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
-                        model="gemini-1.5-flash",
+                        model="gemini-3.7-flash",
                         api_key=self.gemini_api_key,
                         temperature=0.4
                     )
@@ -370,7 +370,7 @@ class RAGChainManager:
                     print(f"Local LLM failed for simulated report ({local_err}). Falling back to Gemini...")
                     from langchain_google_genai import ChatGoogleGenerativeAI
                     fallback_llm = ChatGoogleGenerativeAI(
-                        model="gemini-1.5-flash",
+                        model="gemini-3.7-flash",
                         api_key=self.gemini_api_key,
                         temperature=0.4
                     )
